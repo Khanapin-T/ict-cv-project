@@ -75,15 +75,15 @@ Part A compares architectures (layers), part C compares optimizers.
 
 | Model | Run | Macro F1 | Accuracy | Params | Train time |
 |---|---|---|---|---|---|
-| baseline_cnn | baseline_cnn | — | — | — | — |
-| modified_cnn | modified_cnn | — | — | — | — |
+| baseline_cnn | baseline_cnn | 0.768 | 0.781 | 0.62M | 4.0 min |
+| modified_cnn | modified_cnn | 0.800 | 0.813 | 1.44M | 4.1 min |
 
 **C) Optimizers** (baseline_cnn, test set)
 
 | Optimizer | Run | lr | Macro F1 | Accuracy | Best epoch | Train time |
 |---|---|---|---|---|---|---|
-| — | baseline_cnn | — | — | — | — | — |
-| — | baseline_cnn_sgd | — | — | — | — | — |
+| adam | baseline_cnn | 0.001 | 0.768 | 0.781 | 22 | 4.0 min |
+| sgd | baseline_cnn_sgd | 0.01 | 0.792 | 0.810 | 25 | 4.0 min |
 <!-- results:end -->
 
 The run with the best **val** macro F1 of the three is exported as `models/best.pth` + `models/config.json`.

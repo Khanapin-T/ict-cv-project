@@ -1,0 +1,12 @@
+{
+  "arch": "modified_cnn",
+  "classes": [
+    "cardboard",
+    "glass",
+    "metal",
+    "paper",
+    "plastic",
+    "trash"
+  ],
+  "run_name": "modified_cnn"
+}
