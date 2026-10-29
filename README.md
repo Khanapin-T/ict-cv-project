@@ -108,6 +108,12 @@ val macro F1 per epoch).
    `models/best.pth`, `models/config.json`). With `PUSH_RESULTS = True` (not allowed with `QUICK`) they are also
    committed and pushed to `main`.
 
+**Running the parts separately** (e.g. A + C now, B once synthetic images are in): set `RUN_PARTS = {"A", "C"}`,
+later `RUN_PARTS = {"B"}`. The results cells always merge every run in `reports/`, so the summary, README tables and
+best model cover all runs so far. A new Colab session is a fresh clone, so carry the earlier results over with
+`PUSH_RESULTS = True`, or by uploading the earlier `results.zip` to `/content/` before *Run all*. Per-run checkpoints
+are not kept between sessions; if the best run is an earlier one, its exported `models/best.pth` stays.
+
 **CLI, one run:**
 
 ```bash
