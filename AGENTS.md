@@ -6,9 +6,10 @@ These are the shared rules for everyone working in this repo, people and coding 
 ## Project
 
 SmartWaste AI classifies photos of waste into the 6 TrashNet classes
-`cardboard, glass, metal, paper, plastic, trash` with a fine-tuned **MobileNetV2**
-(torchvision, ImageNet weights). We compare 4 training setups (original / +aug / +synthetic / +both)
-on the same fixed split and serve the best model in a Streamlit app (Docker).
+`cardboard, glass, metal, paper, plastic, trash`. We compare a baseline CNN, a modified CNN (the baseline
+plus one extra conv block) and an ImageNet-pretrained MobileNetV2, with and without augmentation and
+synthetic data, all on the same fixed split. **The main comparison metric is macro F1.** The best model
+is served in a Streamlit app (Docker).
 
 ## Data rules (do not break)
 
@@ -31,47 +32,72 @@ on the same fixed split and serve the best model in a Streamlit app (Docker).
 
 ## Interface contract
 
-| Item | Contract |
+These conventions apply to all code:
+
+- **Classes** are in alphabetical order: `["cardboard", "glass", "metal", "paper", "plastic", "trash"]`.
+  A label index is the position in this list.
+- **Input** is a `3x224x224` tensor. The eval transform (val/test **and** the app) is
+  `Resize((224, 224))` → `ToTensor()` → `Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])`.
+  Augmentation is added to the train transform only.
+- **Main metric:** macro F1. Use it on val to pick checkpoints and on test to compare runs.
+- **Run names:** use one `run_name` per training run for all of its files (e.g. `mobilenet_v2_aug`).
+  Never use `best`, which would overwrite the final model.
+
+### `src/dataset.py`
+
+`get_dataloaders(batch_size, aug: bool, synthetic: bool) -> (train_loader, val_loader, test_loader)`
+
+`aug=True` augments the train set only. `synthetic=True` adds `data/extra/synthetic/<class>/*` to the
+train set only.
+
+### `src/models.py`
+
+`get_model(name, num_classes=6, dropout=0.0, *, pretrained=True) -> nn.Module`
+
+| `name` | Model |
 |---|---|
-| `src/dataset.py` | `get_dataloaders(batch_size: int, aug: bool, synthetic: bool) -> (train_loader, val_loader, test_loader)` |
-| Labels | index = position in `["cardboard", "glass", "metal", "paper", "plastic", "trash"]` (sorted class names) |
-| Eval transform (val/test **and** app) | `Resize((224, 224))` → `ToTensor()` → `Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])` |
-| `aug=True` | adds random augmentation to the **train** transform only |
-| `synthetic=True` | appends `data/extra/synthetic/<class>/*` to the **train** set only |
-| Model | `torchvision.models.mobilenet_v2`, with `classifier[1] = nn.Linear(1280, 6)` |
-| `models/best.pth` | `torch.save(model.state_dict(), ...)`: a plain state_dict of the checkpoint with the best val score |
-| `models/classes.json` | JSON list of class names in label-index order |
-| `reports/<run_name>.json` | test-set metrics, schema below |
+| `"baseline_cnn"` | baseline CNN |
+| `"modified_cnn"` | baseline CNN + one extra conv block |
+| `"mobilenet_v2"` | torchvision MobileNetV2, ImageNet pretrained, new classifier head |
 
-Run names are `original`, `aug`, `synthetic` and `aug_synthetic`.
+- `pretrained=False` skips the ImageNet download. The app uses it because it loads `models/best.pth`
+  anyway. The CNNs accept the argument and ignore it.
+- `dropout` must not change the state_dict keys. Always create the `nn.Dropout(dropout)` layer
+  (`p=0` is a no-op) so that a checkpoint loads whatever dropout it was trained with.
+- An unknown `name` raises `ValueError`.
 
-`reports/<run_name>.json` uses this schema (precision/recall/f1 are **macro** averages):
+### `src/train.py`
 
-```json
-{
-  "run_name": "aug",
-  "split": "test",
-  "classes": ["cardboard", "glass", "metal", "paper", "plastic", "trash"],
-  "accuracy": 0.0,
-  "precision": 0.0,
-  "recall": 0.0,
-  "f1": 0.0,
-  "per_class": {"cardboard": {"precision": 0.0, "recall": 0.0, "f1": 0.0, "support": 0}},
-  "confusion_matrix": [[0, 0, 0, 0, 0, 0]]
-}
-```
+`train(model_name, epochs, lr, optimizer, dropout, aug, synthetic, run_name, ...)`, with a CLI that
+exposes the same options. Each run saves:
 
-`per_class` has one entry per class. `confusion_matrix` is 6×6: rows are true labels, columns are
-predicted labels, in `classes` order.
+- `models/<run>.pth`: `model.state_dict()`. This file stays local (gitignored).
+- `reports/history_<run>.json`: `run_name`, `model_name`, `num_params`, `train_time_sec`, and the
+  per-epoch lists `train_loss`, `val_loss` and `val_f1_macro`.
+
+### `src/evaluate.py`
+
+`evaluate(model, loader, class_names, run_name) -> dict` returns the metrics and writes them to:
+
+- `reports/exp_<run>.json`: `run_name`, `accuracy`, `precision_macro`, `recall_macro`, `f1_macro`,
+  and `per_class` (`{class: {"precision", "recall", "f1", "support"}}`).
+- `reports/cm_<run>.png`: the confusion matrix (rows are true labels, columns are predicted labels,
+  in class order).
+
+### Final model (read by the app)
+
+- `models/best.pth`: the state_dict of the chosen run.
+- `models/config.json`: `{"arch": "<get_model name>", "classes": [...], "run_name": "<run>"}`.
+  This replaces the old `classes.json`.
 
 ## File ownership
 
-| Area | Owner |
+| Owner | Files |
 |---|---|
-| `src/dataset.py`, data analysis (`notebooks/`) | Participant 1 |
-| `src/train.py`, `src/evaluate.py`, `models/best.pth`, `models/classes.json`, results table in `README.md` ("Experiments") | Participant 2 |
-| `app/`, `Dockerfile`, `.dockerignore`, `README.md` (everything except the results table) | Tair |
-| `AGENTS.md`, `requirements.txt`, `src/prepare_split.py`, `splits/`, `data/extra/synthetic/` | shared: change only via a PR the whole team has seen |
+| Participant 1 | `src/dataset.py`, `src/evaluate.py`, `notebooks/data_analysis.ipynb`, `data/extra/synthetic/`, `reports/data_*` |
+| Participant 2 | `src/models.py`, `src/train.py`, `notebooks/colab_train.ipynb`, results table in `README.md`, `models/best.pth` + `models/config.json` |
+| Tair | `src/optimization.py`, `app/`, `Dockerfile`, `.dockerignore`, `README.md` (everything except the results table) |
+| Shared: change only via a PR the whole team has seen | `AGENTS.md`, `requirements.txt`, `src/__init__.py`, `src/prepare_split.py`, `splits/` |
 
 Agents: edit only files owned by the person you are working for. If a change is needed in someone
 else's file, describe it in the PR instead of making it.
@@ -80,11 +106,11 @@ else's file, describe it in the PR instead of making it.
 
 - Work on your own branch: `data` (Participant 1), `model` (Participant 2), `app` (Tair).
 - Merge through a **PR to `main`**. **No direct pushes to `main`.**
-- Never commit `data/raw/`, `.venv/` or other large generated files. `*.pth` is gitignored, except
-  `models/best.pth`.
-- **Only Participant 2 commits `models/best.pth` and `models/classes.json`.** Commit them together, in
+- Never commit `data/raw/`, `.venv/` or other large generated files. In `models/`, only `best.pth`
+  and `config.json` can be committed. Per-run checkpoints (`models/<run>.pth`) stay local.
+- **Only Participant 2 commits `models/best.pth` and `models/config.json`.** Commit them together, in
   a PR, and only after the results table in `README.md` has been updated for the run they come from.
-  Nobody else commits model files. Other checkpoints stay local.
+  Nobody else commits model files.
 - Keep commits small and focused. Write messages in the imperative mood ("Add val loader").
 
 ## Commands
