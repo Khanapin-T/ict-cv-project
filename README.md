@@ -16,14 +16,14 @@ SmartWaste AI classifies photos of household waste into the 6 [TrashNet](https:/
 
 ## Team
 
-| Member | Role | Owns |
-|---|---|---|
-| Participant 1 | Data & evaluation | `src/dataset.py`, `src/evaluate.py`, `notebooks/data_analysis.ipynb`, `data/extra/synthetic/` |
-| Participant 2 | Models & training | `src/models.py`, `src/train.py`, `notebooks/colab_train.ipynb`, results table, final model |
-| Tair | App & delivery | `src/optimization.py`, `app/`, `Dockerfile`, the rest of this README |
+| Member | Defence topic |
+|---|---|
+| Participant 1 | Data: dataset & splits, augmentation, synthetic images, data analysis, evaluation |
+| Participant 2 | Models & training: baseline/modified CNN, MobileNetV2, training loop, results |
+| Tair | Optimization (Adam vs SGD), app, Docker |
 
-Shared rules (the fixed split, the train-only augmentation and synthetic data, the interface contract, and the
-branch/PR workflow) are in [AGENTS.md](AGENTS.md). Read it before writing code.
+Shared rules (the fixed split, the train-only augmentation and synthetic data, and the interface contract) are in
+[AGENTS.md](AGENTS.md). Read it before changing code.
 
 ## Dataset
 
@@ -55,34 +55,84 @@ Synthetic training images go in `data/extra/synthetic/<class>/` and are used **o
 
 ## Experiments
 
-All runs use the same split and eval protocol. Metrics are on **test**, precision/recall/F1 are macro averages, and
-**macro F1 is the main metric**. Each run writes `reports/history_<run>.json` (training curves, time, parameter count),
-`reports/exp_<run>.json` (test metrics) and `reports/cm_<run>.png` (confusion matrix). Participant 2 maintains the
-table below.
+All runs use the same split and eval protocol. The best epoch of each run is picked on **val** macro F1; the metrics
+below are on **test**. **Macro F1 is the main metric.** Each run writes `reports/history_<run>.json` (training curves,
+time, parameter count, hyperparameters), `reports/exp_<run>.json` (test metrics) and `reports/cm_<run>.png` (confusion
+matrix). All runs together are in `reports/summary.csv` and `reports/loss_curves.png`. The tables are printed by the
+last cell of `notebooks/colab_train.ipynb`; paste them here.
 
-| Run | `run_name` | Augmentation | Synthetic | Accuracy | Precision | Recall | F1 |
-|---|---|:---:|:---:|---:|---:|---:|---:|
-| Original | `original` | – | – | | | | |
-| + Augmentation | `aug` | ✓ | – | | | | |
-| + Synthetic | `synthetic` | – | ✓ | | | | |
-| + Both | `aug_synthetic` | ✓ | ✓ | | | | |
+**A) Architectures** (no augmentation, no synthetic images). CNNs: Adam, lr 1e-3, 30 epochs, dropout 0.3.
+MobileNetV2: Adam, lr 1e-4, 15 epochs, dropout 0.2.
+
+| Model | Run | Macro F1 | Accuracy | Params | Train time |
+|---|---|---|---|---|---|
+| baseline_cnn | baseline_cnn | | | | |
+| modified_cnn | modified_cnn | | | | |
+| mobilenet_v2 | mobilenet_v2 | | | | |
+
+**B) Data variants** (mobilenet_v2, same hyperparameters; "original" is run `mobilenet_v2` from A)
+
+| Variant | Run | Macro F1 | Accuracy | Trash F1 |
+|---|---|---|---|---|
+| original | mobilenet_v2 | | | |
+| +aug | mobilenet_v2_aug | | | |
+| +synthetic | mobilenet_v2_syn | | | |
+| +aug+synthetic | mobilenet_v2_aug_syn | | | |
+
+The model with the best **val** macro F1 among A and B is exported as `models/best.pth` + `models/config.json`.
+
+### Optimization
+
+Adam vs SGD (momentum 0.9) on `baseline_cnn` (`src/optimization.py`). The Adam side is part A's `baseline_cnn` run,
+reused and not retrained; the SGD side is `baseline_cnn_sgd`, trained with the same epochs, dropout and data.
+Adam uses lr 1e-3 and SGD (momentum 0.9) uses lr 1e-2. Each optimizer uses its own standard learning rate, because SGD needs a larger step than Adam. So the comparison is between the two optimizers as typically configured, not at an identical lr.
+
+Results: [reports/optimization.csv](reports/optimization.csv) and `reports/optimization_curves.png` (train loss and
+val macro F1 per epoch).
+
+## How to train
+
+**Colab (GPU), all runs:**
+
+1. Create a fine-grained GitHub token for this repo with *Contents: Read* (*Read and write* to push results).
+2. In Colab, open `notebooks/colab_train.ipynb`, add the token as the secret `GH_TOKEN` (key icon) and turn on
+   *Notebook access*.
+3. *Runtime → Change runtime type → GPU*, then *Run all*. Set `QUICK = True` first for a few-minute pipeline check.
+4. The last cells print the README tables and download `results.zip` (`reports/`, `models/best.pth`,
+   `models/config.json`). With `PUSH_RESULTS = True` they are committed and pushed instead.
+
+**CLI, one run:**
+
+```bash
+python src/train.py --model mobilenet_v2 --epochs 15 --lr 1e-4 --dropout 0.2 --aug --run-name mobilenet_v2_aug
+python src/optimization.py                  # after the baseline_cnn run
+python src/train.py --model baseline_cnn --epochs 1 --max-batches 2 --run-name smoke   # quick CPU check
+```
+
+**Tests** (CPU, a few batches; tests that need `data/raw/` are skipped without it):
+
+```bash
+pytest -q
+```
 
 ## Structure
 
 ```
 AGENTS.md              shared rules for the team and coding agents (CLAUDE.md imports it)
 src/prepare_split.py   download TrashNet, dedup, fixed split
-src/dataset.py         get_dataloaders(batch_size, aug, synthetic)                   (Participant 1)
-src/evaluate.py        evaluate() -> reports/exp_<run>.json, reports/cm_<run>.png    (Participant 1)
-src/models.py          get_model(name): baseline_cnn, modified_cnn, mobilenet_v2     (Participant 2)
-src/train.py           train() + CLI -> models/<run>.pth, reports/history_<run>.json (Participant 2)
-src/optimization.py    (Tair)
-notebooks/             data_analysis.ipynb (Participant 1), colab_train.ipynb (Participant 2)
+src/dataset.py         get_dataloaders(batch_size, aug, synthetic)
+src/models.py          get_model(name): baseline_cnn, modified_cnn, mobilenet_v2
+src/train.py           train() + CLI -> models/<run>.pth, reports/history_<run>.json
+src/evaluate.py        evaluate() -> reports/exp_<run>.json, reports/cm_<run>.png
+src/optimization.py    Adam vs SGD on baseline_cnn -> reports/optimization.csv
+src/report.py          summary.csv, loss curves, best-model export, README tables
+notebooks/             colab_train.ipynb (all training runs), data_analysis.ipynb
+tests/                 pytest contract and app tests
 splits/splits.csv      fixed train/val/test split (committed)
 data/raw/              TrashNet images (not committed)
 data/extra/synthetic/  synthetic train-only images per class (committed)
 models/                best.pth + config.json: the final model used by the app (committed)
-reports/               class counts, duplicates, training histories, test metrics
+reports/               class counts, duplicates, data figures, training histories, test metrics
 app/app.py             Streamlit demo
 ```
 
