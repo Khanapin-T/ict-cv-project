@@ -1,24 +1,26 @@
 # SmartWaste AI
 
 SmartWaste AI classifies photos of household waste into the 6 [TrashNet](https://huggingface.co/datasets/garythung/trashnet) classes
-(cardboard, glass, metal, paper, plastic, trash) using transfer learning with **MobileNetV2**. It's a small step toward
-automated waste sorting.
+(cardboard, glass, metal, paper, plastic, trash). It compares CNNs trained from scratch with transfer learning from
+**MobileNetV2**. It's a small step toward automated waste sorting.
 
 ## Goal
 
-1. Fine-tune an ImageNet-pretrained MobileNetV2 on TrashNet. This is the **original** baseline.
-2. Measure how much the model gains from **data augmentation**, **synthetic images**, and **both**.
-3. Compare all runs on the same fixed, deduplicated test split with accuracy, macro precision/recall/F1,
-   per-class metrics and the confusion matrix.
+1. Train a **baseline CNN** and a **modified CNN** (the baseline plus one extra conv block), and fine-tune an
+   ImageNet-pretrained **MobileNetV2**.
+2. Measure the effect of **data augmentation**, **synthetic images** and training settings (optimizer, learning rate,
+   dropout).
+3. Compare all runs on the same fixed, deduplicated test split. **Macro F1 is the main metric.** Accuracy, macro
+   precision/recall, per-class metrics and confusion matrices are reported too.
 4. Serve the best model in a Streamlit demo, packaged with Docker.
 
 ## Team
 
 | Member | Role | Owns |
 |---|---|---|
-| Participant 1 | Data | `src/dataset.py`, data analysis (`notebooks/`) |
-| Participant 2 | Model | `src/train.py`, `src/evaluate.py` |
-| Tair | App & delivery | `app/`, `Dockerfile`, `README.md` |
+| Participant 1 | Data & evaluation | `src/dataset.py`, `src/evaluate.py`, `notebooks/data_analysis.ipynb`, `data/extra/synthetic/` |
+| Participant 2 | Models & training | `src/models.py`, `src/train.py`, `notebooks/colab_train.ipynb`, results table, final model |
+| Tair | App & delivery | `src/optimization.py`, `app/`, `Dockerfile`, the rest of this README |
 
 Shared rules (the fixed split, the train-only augmentation and synthetic data, the interface contract, and the
 branch/PR workflow) are in [AGENTS.md](AGENTS.md). Read it before writing code.
@@ -53,8 +55,10 @@ Synthetic training images go in `data/extra/synthetic/<class>/` and are used **o
 
 ## Experiments
 
-All runs use the same split, MobileNetV2 and eval protocol. Metrics are on **test**, and precision/recall/F1 are macro
-averages. Each run writes `reports/<run_name>.json`.
+All runs use the same split and eval protocol. Metrics are on **test**, precision/recall/F1 are macro averages, and
+**macro F1 is the main metric**. Each run writes `reports/history_<run>.json` (training curves, time, parameter count),
+`reports/exp_<run>.json` (test metrics) and `reports/cm_<run>.png` (confusion matrix). Participant 2 maintains the
+table below.
 
 | Run | `run_name` | Augmentation | Synthetic | Accuracy | Precision | Recall | F1 |
 |---|---|:---:|:---:|---:|---:|---:|---:|
@@ -68,13 +72,17 @@ averages. Each run writes `reports/<run_name>.json`.
 ```
 AGENTS.md              shared rules for the team and coding agents (CLAUDE.md imports it)
 src/prepare_split.py   download TrashNet, dedup, fixed split
-src/dataset.py         get_dataloaders(batch_size, aug, synthetic)       (Participant 1)
-src/train.py           training -> models/best.pth, models/classes.json  (Participant 2)
-src/evaluate.py        test metrics -> reports/<run_name>.json           (Participant 2)
+src/dataset.py         get_dataloaders(batch_size, aug, synthetic)                   (Participant 1)
+src/evaluate.py        evaluate() -> reports/exp_<run>.json, reports/cm_<run>.png    (Participant 1)
+src/models.py          get_model(name): baseline_cnn, modified_cnn, mobilenet_v2     (Participant 2)
+src/train.py           train() + CLI -> models/<run>.pth, reports/history_<run>.json (Participant 2)
+src/optimization.py    (Tair)
+notebooks/             data_analysis.ipynb (Participant 1), colab_train.ipynb (Participant 2)
 splits/splits.csv      fixed train/val/test split (committed)
 data/raw/              TrashNet images (not committed)
 data/extra/synthetic/  synthetic train-only images per class (committed)
-reports/               class counts, duplicates, run metrics
+models/                best.pth + config.json: the final model used by the app (committed)
+reports/               class counts, duplicates, training histories, test metrics
 app/app.py             Streamlit demo
 ```
 
@@ -105,7 +113,9 @@ streamlit run app/app.py
 ```
 
 Open http://localhost:8501 and upload a photo. The app shows the predicted class, its confidence and the top-3 classes.
-If `models/best.pth` and `models/classes.json` don't exist yet, it shows a "model not trained yet" notice instead.
+The app builds the architecture named in `models/config.json` with `src.models.get_model` and loads `models/best.pth`.
+If either file doesn't exist yet, it shows a "model not trained yet" notice instead. A replaced model is picked up on
+page reload.
 
 ## Docker
 
