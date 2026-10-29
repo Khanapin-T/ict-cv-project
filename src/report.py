@@ -83,16 +83,26 @@ def plot_loss_curves(run_names: list[str], out_path: Path, *, reports_dir: Path 
 
 
 def export_best(run_names: list[str], *, reports_dir: Path = REPORTS_DIR, models_dir: Path = MODELS_DIR) -> str:
-    """Copy the run with the highest **val** macro F1 to models/best.pth and write models/config.json."""
+    """Copy the run with the highest **val** macro F1 to models/best.pth and write models/config.json.
+
+    Runs from an earlier session (results merged from git or results.zip) have no <run>.pth, since per-run checkpoints
+    aren't committed. If such a run wins and models/best.pth already holds it (config.json names it), it is kept.
+    """
     histories = {run: load_json(Path(reports_dir) / f"history_{run}.json") for run in run_names
                  if (Path(reports_dir) / f"history_{run}.json").exists()}
     if not histories:
         raise FileNotFoundError(f"None of {run_names} has a history_<run>.json in {reports_dir}")
     best = max(histories, key=lambda run: histories[run]["best_val_f1_macro"])
     models_dir = Path(models_dir)
-    shutil.copyfile(models_dir / f"{best}.pth", models_dir / "best.pth")
+    ckpt, config_path = models_dir / f"{best}.pth", models_dir / "config.json"
+    if not ckpt.exists():
+        if (models_dir / "best.pth").exists() and config_path.exists() and load_json(config_path)["run_name"] == best:
+            return best
+        raise FileNotFoundError(f"{best} has the best val macro F1 but {ckpt} is missing and models/best.pth is not "
+                                f"that run. Per-run checkpoints aren't committed: re-run {best} in this session.")
+    shutil.copyfile(ckpt, models_dir / "best.pth")
     config = {"arch": histories[best]["model_name"], "classes": CLASSES, "run_name": best}
-    (models_dir / "config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
+    config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
     return best
 
 

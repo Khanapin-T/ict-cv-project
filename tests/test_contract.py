@@ -65,14 +65,17 @@ def test_synthetic_train_only(tmp_path, monkeypatch):
         (tmp_path / cls).mkdir()
         Image.new("RGBA", (300, 200), (10, 20, 30, 128)).save(tmp_path / cls / "a.png")
         Image.new("L", (64, 80), 128).save(tmp_path / cls / "b.jpg")
+        Image.new("RGBA", (120, 90), (200, 100, 50, 255)).save(tmp_path / cls / "c.webp")
+        Image.new("RGB", (100, 100)).save(tmp_path / cls / "d.WEBP", format="WEBP")
     monkeypatch.setattr(dataset, "SYNTHETIC_DIR", tmp_path)
 
     train, val, test = dataset.get_dataloaders(4, aug=False, synthetic=True)
-    assert len(train.dataset) == 1744 + 12
-    assert train.dataset.n_synthetic == 12
+    assert len(train.dataset) == 1744 + 24
+    assert train.dataset.n_synthetic == 24
+    assert {p.suffix for p, _ in dataset.synthetic_items()} == {".png", ".jpg", ".webp", ".WEBP"}
     assert (len(val.dataset), len(test.dataset)) == (374, 374)
     ds = train.dataset
-    for i in range(len(ds) - 12, len(ds)):
+    for i in range(len(ds) - 24, len(ds)):
         x, y = ds[i]
         assert x.shape == (3, 224, 224)
         assert CLASSES[y] == ds.items[i][0].parent.name
@@ -308,6 +311,39 @@ def test_export_best_picks_val_not_test(tmp_path):
     config = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
     assert config == {"arch": "baseline_cnn", "classes": CLASSES, "run_name": "high_val"}
     assert (tmp_path / "best.pth").read_bytes() == (tmp_path / "high_val.pth").read_bytes()
+
+
+def test_export_best_keeps_best_from_earlier_session(tmp_path):
+    """Runs from an earlier Colab session have history/exp JSON but no <run>.pth (not committed)."""
+    import json
+
+    from src.report import export_best
+
+    _fake_run(tmp_path, tmp_path, "mobilenet_v2", "mobilenet_v2", val_f1=0.9, test_f1=0.8)
+    _fake_run(tmp_path, tmp_path, "mobilenet_v2_aug", "mobilenet_v2", val_f1=0.7, test_f1=0.7)
+    (tmp_path / "mobilenet_v2.pth").rename(tmp_path / "best.pth")
+    config = {"arch": "mobilenet_v2", "classes": CLASSES, "run_name": "mobilenet_v2"}
+    (tmp_path / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    before = (tmp_path / "best.pth").read_bytes()
+
+    assert export_best(["mobilenet_v2", "mobilenet_v2_aug"], reports_dir=tmp_path, models_dir=tmp_path) == "mobilenet_v2"
+    assert (tmp_path / "best.pth").read_bytes() == before
+    assert json.loads((tmp_path / "config.json").read_text(encoding="utf-8")) == config
+
+
+def test_export_best_missing_checkpoint_raises(tmp_path):
+    import json
+
+    from src.report import export_best
+
+    _fake_run(tmp_path, tmp_path, "mobilenet_v2", "mobilenet_v2", val_f1=0.9, test_f1=0.8)
+    _fake_run(tmp_path, tmp_path, "baseline_cnn", "baseline_cnn", val_f1=0.5, test_f1=0.5)
+    (tmp_path / "mobilenet_v2.pth").unlink()
+    (tmp_path / "baseline_cnn.pth").rename(tmp_path / "best.pth")
+    (tmp_path / "config.json").write_text(json.dumps({"arch": "baseline_cnn", "classes": CLASSES,
+                                                      "run_name": "baseline_cnn"}), encoding="utf-8")
+    with pytest.raises(FileNotFoundError, match="mobilenet_v2"):
+        export_best(["mobilenet_v2", "baseline_cnn"], reports_dir=tmp_path, models_dir=tmp_path)
 
 
 def test_results_markdown_has_both_tables(tmp_path):
