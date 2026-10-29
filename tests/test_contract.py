@@ -139,3 +139,30 @@ def test_unknown_model_raises():
 
     with pytest.raises(ValueError):
         get_model("resnet50")
+
+
+# ---------------------------------------------------------------- evaluate
+
+EXP_KEYS = {"run_name", "accuracy", "precision_macro", "recall_macro", "f1_macro", "per_class", "confusion_matrix"}
+
+
+def test_evaluate_outputs(tmp_path):
+    import json
+
+    from torch import nn
+    from torch.utils.data import DataLoader, TensorDataset
+
+    from src.evaluate import evaluate
+
+    torch.manual_seed(0)
+    loader = DataLoader(TensorDataset(torch.randn(12, 3, 8, 8), torch.arange(12) % 6), batch_size=4)
+    model = nn.Sequential(nn.Flatten(), nn.Linear(3 * 8 * 8, 6))
+    result = evaluate(model, loader, CLASSES, "dummy", reports_dir=tmp_path)
+
+    assert set(result) == EXP_KEYS
+    assert list(result["per_class"]) == CLASSES
+    assert set(result["per_class"]["glass"]) == {"precision", "recall", "f1", "support"}
+    assert len(result["confusion_matrix"]) == 6 and all(len(r) == 6 for r in result["confusion_matrix"])
+    assert sum(map(sum, result["confusion_matrix"])) == 12
+    assert json.loads((tmp_path / "exp_dummy.json").read_text(encoding="utf-8")) == result
+    assert (tmp_path / "cm_dummy.png").stat().st_size > 0
