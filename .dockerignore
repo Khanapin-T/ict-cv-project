@@ -1,0 +1,21 @@
+# Only requirements.txt, app/ and models/ are needed in the image.
+.git
+.gitignore
+.venv
+venv
+env
+**/__pycache__
+**/*.py[cod]
+.ipynb_checkpoints
+.claude
+.vscode
+.idea
+data
+splits
+reports
+notebooks
+src
+docs
+*.md
+Dockerfile
+.dockerignore
