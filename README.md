@@ -58,26 +58,31 @@ Synthetic training images go in `data/extra/synthetic/<class>/` and are used **o
 All runs use the same split and eval protocol. The best epoch of each run is picked on **val** macro F1; the metrics
 below are on **test**. **Macro F1 is the main metric.** Each run writes `reports/history_<run>.json` (training curves,
 time, parameter count, hyperparameters), `reports/exp_<run>.json` (test metrics) and `reports/cm_<run>.png` (confusion
-matrix). All runs together are in `reports/summary.csv` and `reports/loss_curves.png`. The tables are printed by the
-last cell of `notebooks/colab_train.ipynb`; paste them here.
+matrix). All runs together are in `reports/summary.csv` and `reports/loss_curves.png`. The tables below are written by
+`notebooks/colab_train.ipynb` (`update_readme`); "—" means the run hasn't happened yet.
 
-**A) Architectures** (no augmentation, no synthetic images). CNNs: Adam, lr 1e-3, 30 epochs, dropout 0.3.
-MobileNetV2: Adam, lr 1e-4, 15 epochs, dropout 0.2.
+Part A compares architectures on the original data (no augmentation, no synthetic images). CNNs: Adam, lr 1e-3, 30 epochs,
+dropout 0.3. MobileNetV2: Adam, lr 1e-4, 15 epochs, dropout 0.2. Part B trains mobilenet_v2 with the same
+hyperparameters on each data variant; "original" is run `mobilenet_v2` from A.
+
+<!-- results:start (written by src/report.py update_readme) -->
+**A) Architectures** (test set; best epoch picked on val macro F1)
 
 | Model | Run | Macro F1 | Accuracy | Params | Train time |
 |---|---|---|---|---|---|
-| baseline_cnn | baseline_cnn | | | | |
-| modified_cnn | modified_cnn | | | | |
-| mobilenet_v2 | mobilenet_v2 | | | | |
+| baseline_cnn | baseline_cnn | — | — | — | — |
+| modified_cnn | modified_cnn | — | — | — | — |
+| mobilenet_v2 | mobilenet_v2 | — | — | — | — |
 
-**B) Data variants** (mobilenet_v2, same hyperparameters; "original" is run `mobilenet_v2` from A)
+**B) Data variants** (mobilenet_v2, test set)
 
 | Variant | Run | Macro F1 | Accuracy | Trash F1 |
 |---|---|---|---|---|
-| original | mobilenet_v2 | | | |
-| +aug | mobilenet_v2_aug | | | |
-| +synthetic | mobilenet_v2_syn | | | |
-| +aug+synthetic | mobilenet_v2_aug_syn | | | |
+| original | mobilenet_v2 | — | — | — |
+| +aug | mobilenet_v2_aug | — | — | — |
+| +synthetic | mobilenet_v2_syn | — | — | — |
+| +aug+synthetic | mobilenet_v2_aug_syn | — | — | — |
+<!-- results:end -->
 
 The model with the best **val** macro F1 among A and B is exported as `models/best.pth` + `models/config.json`.
 
@@ -98,8 +103,10 @@ val macro F1 per epoch).
 2. In Colab, open `notebooks/colab_train.ipynb`, add the token as the secret `GH_TOKEN` (key icon) and turn on
    *Notebook access*.
 3. *Runtime → Change runtime type → GPU*, then *Run all*. Set `QUICK = True` first for a few-minute pipeline check.
-4. The last cells print the README tables and download `results.zip` (`reports/`, `models/best.pth`,
-   `models/config.json`). With `PUSH_RESULTS = True` they are committed and pushed instead.
+4. The first run installs the pinned packages and restarts the runtime once; then *Run all* again.
+5. The last cells write the tables into this README and download `results.zip` (`reports/`, `README.md`,
+   `models/best.pth`, `models/config.json`). With `PUSH_RESULTS = True` (not allowed with `QUICK`) they are also
+   committed and pushed to `main`.
 
 **CLI, one run:**
 
