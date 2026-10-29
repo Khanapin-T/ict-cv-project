@@ -1,17 +1,22 @@
 """SmartWaste AI demo: upload a photo of a waste item and get its TrashNet class."""
 
 import json
+import sys
 from pathlib import Path
 
 import streamlit as st
 import torch
 from PIL import Image, ImageOps, UnidentifiedImageError
 from torch import nn
-from torchvision import models, transforms
+from torchvision import transforms
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))  # streamlit puts app/ on sys.path, not the repo root
+
+from src.models import get_model
+
 MODEL_PATH = ROOT / "models" / "best.pth"
-CLASSES_PATH = ROOT / "models" / "classes.json"
+CONFIG_PATH = ROOT / "models" / "config.json"
 TOP_K = 3
 
 # Must match the eval transform in src/dataset.py (see AGENTS.md, "Interface contract").
@@ -23,12 +28,12 @@ EVAL_TRANSFORM = transforms.Compose([
 
 
 @st.cache_resource
-def load_model() -> tuple[nn.Module, list[str]]:
-    classes = json.loads(CLASSES_PATH.read_text(encoding="utf-8"))
-    model = models.mobilenet_v2(weights=None)
-    model.classifier[1] = nn.Linear(model.last_channel, len(classes))
+def load_model(version: tuple[int, int]) -> tuple[nn.Module, dict]:
+    """`version` (the files' mtimes) is the cache key, so a replaced model loads on page reload."""
+    config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    model = get_model(config["arch"], num_classes=len(config["classes"]), pretrained=False)
     model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu", weights_only=True))
-    return model.eval(), classes
+    return model.eval(), config
 
 
 def predict(model: nn.Module, image: Image.Image) -> torch.Tensor:
@@ -39,20 +44,23 @@ def predict(model: nn.Module, image: Image.Image) -> torch.Tensor:
 
 st.set_page_config(page_title="SmartWaste AI", page_icon="♻️")
 st.title("SmartWaste AI")
-st.caption("Upload a photo of a waste item. A MobileNetV2 fine-tuned on TrashNet predicts its class.")
+st.caption("Upload a photo of a waste item. A model trained on TrashNet predicts its class.")
 
-if not (MODEL_PATH.exists() and CLASSES_PATH.exists()):
+if not (MODEL_PATH.exists() and CONFIG_PATH.exists()):
     st.info(
-        "**Model not trained yet.** `models/best.pth` and `models/classes.json` were not found. "
+        "**Model not trained yet.** `models/best.pth` and `models/config.json` were not found. "
         "Train a model with `src/train.py`, then reload this page."
     )
     st.stop()
 
 try:
-    model, classes = load_model()
-except Exception as exc:  # weights that don't match the contract in AGENTS.md
-    st.error(f"Could not load `models/best.pth`: {exc}")
+    model, config = load_model((MODEL_PATH.stat().st_mtime_ns, CONFIG_PATH.stat().st_mtime_ns))
+except Exception as exc:  # weights or config that don't match the contract in AGENTS.md
+    st.error(f"Could not load the model from `models/`: {exc}")
     st.stop()
+
+classes = config["classes"]
+st.caption(f"Model: `{config['arch']}`, run `{config.get('run_name', '?')}`")
 
 uploaded = st.file_uploader("Waste photo", type=["jpg", "jpeg", "png", "webp"])
 if uploaded is None:
