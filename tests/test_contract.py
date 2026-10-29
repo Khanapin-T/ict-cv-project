@@ -166,3 +166,88 @@ def test_evaluate_outputs(tmp_path):
     assert sum(map(sum, result["confusion_matrix"])) == 12
     assert json.loads((tmp_path / "exp_dummy.json").read_text(encoding="utf-8")) == result
     assert (tmp_path / "cm_dummy.png").stat().st_size > 0
+
+
+# ---------------------------------------------------------------- train
+
+HISTORY_KEYS = {"run_name", "model_name", "num_params", "train_time_sec", "train_loss", "val_loss", "val_f1_macro",
+                "best_epoch", "best_val_f1_macro", "hparams"}
+HPARAM_KEYS = {"epochs", "lr", "optimizer", "dropout", "aug", "synthetic", "n_synthetic", "batch_size", "seed",
+               "max_batches"}
+
+
+def _leading_params(fn, n):
+    import inspect
+
+    return list(inspect.signature(fn).parameters)[:n]
+
+
+def test_signatures():
+    import inspect
+
+    from src.dataset import get_dataloaders
+    from src.evaluate import evaluate
+    from src.models import get_model
+    from src.train import train
+
+    assert _leading_params(get_dataloaders, 3) == ["batch_size", "aug", "synthetic"]
+    params = inspect.signature(get_model).parameters
+    assert list(params)[:3] == ["name", "num_classes", "dropout"]
+    assert (params["num_classes"].default, params["dropout"].default) == (6, 0.0)
+    assert params["pretrained"].kind is inspect.Parameter.KEYWORD_ONLY and params["pretrained"].default is True
+    assert _leading_params(train, 8) == ["model_name", "epochs", "lr", "optimizer", "dropout", "aug", "synthetic",
+                                         "run_name"]
+    assert _leading_params(evaluate, 4) == ["model", "loader", "class_names", "run_name"]
+
+
+@needs_data
+@pytest.mark.parametrize("name", MODEL_NAMES)
+def test_train_smoke_every_model(name, tmp_path):
+    import json
+
+    from src.models import get_model
+    from src.train import train
+
+    models_dir, reports_dir = tmp_path / "models", tmp_path / "reports"
+    result = train(name, epochs=1, lr=1e-3, optimizer="adam", dropout=0.2, aug=True, synthetic=False,
+                   run_name=f"smoke_{name}", batch_size=4, max_batches=1, pretrained=False,
+                   models_dir=models_dir, reports_dir=reports_dir)
+
+    assert set(result) == EXP_KEYS
+    state = torch.load(models_dir / f"smoke_{name}.pth", map_location="cpu", weights_only=True)
+    get_model(name, pretrained=False).load_state_dict(state)
+    history = json.loads((reports_dir / f"history_smoke_{name}.json").read_text(encoding="utf-8"))
+    assert set(history) == HISTORY_KEYS
+    assert set(history["hparams"]) == HPARAM_KEYS
+    assert all(len(history[k]) == 1 for k in ("train_loss", "val_loss", "val_f1_macro"))
+    assert history["best_epoch"] == 1 and history["model_name"] == name
+    assert (reports_dir / f"exp_smoke_{name}.json").exists()
+    assert (reports_dir / f"cm_smoke_{name}.png").exists()
+
+
+@pytest.mark.parametrize("run_name", ["best", "a/b", r"a\b"])
+def test_train_rejects_bad_run_name(run_name, tmp_path):
+    from src.train import train
+
+    with pytest.raises(ValueError):
+        train("baseline_cnn", 1, 1e-3, "adam", 0.0, False, False, run_name, models_dir=tmp_path, reports_dir=tmp_path)
+
+
+def test_train_rejects_unknown_optimizer(tmp_path):
+    from src.train import train
+
+    with pytest.raises(ValueError):
+        train("baseline_cnn", 1, 1e-3, "rmsprop", 0.0, False, False, "x", models_dir=tmp_path, reports_dir=tmp_path)
+
+
+@needs_data
+def test_train_cli_smoke(tmp_path):
+    import subprocess
+    import sys
+
+    cmd = [sys.executable, str(ROOT / "src" / "train.py"), "--model", "baseline_cnn", "--epochs", "1",
+           "--max-batches", "1", "--batch-size", "4", "--optimizer", "sgd", "--lr", "0.01", "--aug",
+           "--run-name", "cli", "--models-dir", str(tmp_path / "m"), "--reports-dir", str(tmp_path / "r")]
+    subprocess.run(cmd, check=True, cwd=tmp_path, capture_output=True, timeout=300)
+    assert (tmp_path / "m" / "cli.pth").exists()
+    assert (tmp_path / "r" / "history_cli.json").exists()
