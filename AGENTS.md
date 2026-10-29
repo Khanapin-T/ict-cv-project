@@ -73,14 +73,15 @@ exposes the same options. Each run saves:
 
 - `models/<run>.pth`: `model.state_dict()`. This file stays local (gitignored).
 - `reports/history_<run>.json`: `run_name`, `model_name`, `num_params`, `train_time_sec`, and the
-  per-epoch lists `train_loss`, `val_loss` and `val_f1_macro`.
+  per-epoch lists `train_loss`, `val_loss` and `val_f1_macro`, plus `best_epoch` (1-based),
+  `best_val_f1_macro` and `hparams` (the run's settings).
 
 ### `src/evaluate.py`
 
 `evaluate(model, loader, class_names, run_name) -> dict` returns the metrics and writes them to:
 
 - `reports/exp_<run>.json`: `run_name`, `accuracy`, `precision_macro`, `recall_macro`, `f1_macro`,
-  and `per_class` (`{class: {"precision", "recall", "f1", "support"}}`).
+  `per_class` (`{class: {"precision", "recall", "f1", "support"}}`) and `confusion_matrix`.
 - `reports/cm_<run>.png`: the confusion matrix (rows are true labels, columns are predicted labels,
   in class order).
 
@@ -90,27 +91,23 @@ exposes the same options. Each run saves:
 - `models/config.json`: `{"arch": "<get_model name>", "classes": [...], "run_name": "<run>"}`.
   This replaces the old `classes.json`.
 
-## File ownership
+## Defence topics
 
-| Owner | Files |
+| Member | Topic |
 |---|---|
-| Participant 1 | `src/dataset.py`, `src/evaluate.py`, `notebooks/data_analysis.ipynb`, `data/extra/synthetic/`, `reports/data_*` |
-| Participant 2 | `src/models.py`, `src/train.py`, `notebooks/colab_train.ipynb`, results table in `README.md`, `models/best.pth` + `models/config.json` |
-| Tair | `src/optimization.py`, `app/`, `Dockerfile`, `.dockerignore`, `README.md` (everything except the results table) |
-| Shared: change only via a PR the whole team has seen | `AGENTS.md`, `requirements.txt`, `src/__init__.py`, `src/prepare_split.py`, `splits/` |
+| Participant 1 | Data: dataset & splits, augmentation, synthetic images, data analysis, evaluation |
+| Participant 2 | Models & training: baseline/modified CNN, MobileNetV2, training loop, results |
+| Tair | Optimization (Adam vs SGD), app, Docker |
 
-Agents: edit only files owned by the person you are working for. If a change is needed in someone
-else's file, describe it in the PR instead of making it.
+Tair's agent writes all code. Teammates provide synthetic images and slides.
 
 ## Git workflow
 
-- Work on your own branch: `data` (Participant 1), `model` (Participant 2), `app` (Tair).
-- Merge through a **PR to `main`**. **No direct pushes to `main`.**
+- Commits go straight to `main`.
 - Never commit `data/raw/`, `.venv/` or other large generated files. In `models/`, only `best.pth`
   and `config.json` can be committed. Per-run checkpoints (`models/<run>.pth`) stay local.
-- **Only Participant 2 commits `models/best.pth` and `models/config.json`.** Commit them together, in
-  a PR, and only after the results table in `README.md` has been updated for the run they come from.
-  Nobody else commits model files.
+- `models/best.pth` + `models/config.json` are produced by `notebooks/colab_train.ipynb` (`export_best`).
+  Commit them together, after the results tables in `README.md` have been updated for the run they come from.
 - Keep commits small and focused. Write messages in the imperative mood ("Add val loader").
 
 ## Commands
@@ -120,4 +117,5 @@ python -m venv .venv && .venv/Scripts/activate   # Linux/macOS: source .venv/bin
 pip install -r requirements.txt                  # versions are pinned; don't bump them casually
 python src/prepare_split.py                      # download data/raw and verify it against splits.csv
 streamlit run app/app.py                         # demo app on http://localhost:8501
+pytest -q                                        # contract tests (CPU, tiny subset)
 ```
