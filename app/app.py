@@ -1,22 +1,24 @@
 """SmartWaste AI demo: upload a photo of a waste item and get its TrashNet class."""
 
 import json
+import os
 import sys
 from pathlib import Path
 
 import streamlit as st
 import torch
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import UnidentifiedImageError
 from torch import nn
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))  # streamlit puts app/ on sys.path, not the repo root
 
-from src.dataset import EVAL_TRANSFORM  # the same transform as val/test (AGENTS.md, "Interface contract")
+from src.inference import load_image, predict_image  # EVAL_TRANSFORM, as for val/test (AGENTS.md)
 from src.models import get_model
 
-MODEL_PATH = ROOT / "models" / "best.pth"
-CONFIG_PATH = ROOT / "models" / "config.json"
+MODELS_DIR = Path(os.environ.get("SMARTWASTE_MODELS_DIR", ROOT / "models"))  # the tests point it at a temp dir
+MODEL_PATH = MODELS_DIR / "best.pth"
+CONFIG_PATH = MODELS_DIR / "config.json"
 TOP_K = 3
 
 
@@ -27,12 +29,6 @@ def load_model(version: tuple[int, int]) -> tuple[nn.Module, dict]:
     model = get_model(config["arch"], num_classes=len(config["classes"]))
     model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu", weights_only=True))
     return model.eval(), config
-
-
-def predict(model: nn.Module, image: Image.Image) -> torch.Tensor:
-    x = EVAL_TRANSFORM(image).unsqueeze(0)
-    with torch.inference_mode():
-        return torch.softmax(model(x), dim=1)[0]
 
 
 st.set_page_config(page_title="SmartWaste AI", page_icon="♻️")
@@ -60,12 +56,12 @@ if uploaded is None:
     st.stop()
 
 try:
-    image = ImageOps.exif_transpose(Image.open(uploaded)).convert("RGB")
+    image = load_image(uploaded)
 except UnidentifiedImageError:
     st.error("This file is not a readable image.")
     st.stop()
 
-probs = predict(model, image)
+probs = predict_image(model, image)
 top = torch.topk(probs, k=min(TOP_K, len(classes)))
 best_prob, best_idx = top.values[0].item(), top.indices[0].item()
 

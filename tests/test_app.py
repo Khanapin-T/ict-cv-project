@@ -1,4 +1,4 @@
-"""Streamlit app tests (AppTest). They write a temporary models/best.pth + config.json and always remove them."""
+"""Streamlit app tests (AppTest). The app reads a temp models dir (SMARTWASTE_MODELS_DIR), never the real models/."""
 
 import json
 from pathlib import Path
@@ -13,29 +13,28 @@ from src.models import get_model
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = str(ROOT / "app" / "app.py")  # AppTest resolves relative paths against the caller, so pass an absolute one
-MODEL_PATH = ROOT / "models" / "best.pth"
-CONFIG_PATH = ROOT / "models" / "config.json"
 SAMPLE = ROOT / "data" / "raw" / "glass" / "glass1.jpg"
 
-pytestmark = pytest.mark.skipif(MODEL_PATH.exists() or CONFIG_PATH.exists(),
-                                reason="a real models/best.pth or config.json exists; not overwriting it")
+
+@pytest.fixture(autouse=True)
+def models_dir(tmp_path, monkeypatch):
+    """An empty models dir for the app, so the committed models/best.pth is never read or touched."""
+    monkeypatch.setenv("SMARTWASTE_MODELS_DIR", str(tmp_path))
+    st.cache_resource.clear()
+    yield tmp_path
+    st.cache_resource.clear()
 
 
 @pytest.fixture
-def install_model():
-    """Returns install(arch, weights_arch) that writes a dummy model; removes both files afterwards."""
+def install_model(models_dir):
+    """Returns install(arch, weights_arch) that writes a dummy model into the temp models dir."""
 
     def install(arch: str, weights_arch: str | None = None) -> None:
-        torch.save(get_model(weights_arch or arch, dropout=0.3).state_dict(), MODEL_PATH)
-        CONFIG_PATH.write_text(json.dumps({"arch": arch, "classes": CLASSES, "run_name": "test"}), encoding="utf-8")
+        torch.save(get_model(weights_arch or arch, dropout=0.3).state_dict(), models_dir / "best.pth")
+        config = {"arch": arch, "classes": CLASSES, "run_name": "test"}
+        (models_dir / "config.json").write_text(json.dumps(config), encoding="utf-8")
 
-    st.cache_resource.clear()
-    try:
-        yield install
-    finally:
-        MODEL_PATH.unlink(missing_ok=True)
-        CONFIG_PATH.unlink(missing_ok=True)
-        st.cache_resource.clear()
+    return install
 
 
 def run_app(upload: tuple[str, bytes, str] | None = None) -> AppTest:
@@ -48,8 +47,10 @@ def run_app(upload: tuple[str, bytes, str] | None = None) -> AppTest:
 
 def test_app_uses_dataset_eval_transform():
     source = Path(APP).read_text(encoding="utf-8")
-    assert "from src.dataset import EVAL_TRANSFORM" in source
+    assert "from src.inference import load_image, predict_image" in source
     assert "transforms.Compose" not in source
+    inference = (ROOT / "src" / "inference.py").read_text(encoding="utf-8")
+    assert "from src.dataset import EVAL_TRANSFORM" in inference and "transforms.Compose" not in inference
 
 
 def test_no_model_shows_notice():
