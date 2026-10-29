@@ -225,7 +225,7 @@ def test_train_smoke_every_model(name, tmp_path):
     assert (reports_dir / f"cm_smoke_{name}.png").exists()
 
 
-@pytest.mark.parametrize("run_name", ["best", "a/b", r"a\b"])
+@pytest.mark.parametrize("run_name", ["best", "Best", "BEST", "a/b", r"a\b"])
 def test_train_rejects_bad_run_name(run_name, tmp_path):
     from src.train import train
 
@@ -322,6 +322,40 @@ def test_results_markdown_has_both_tables(tmp_path):
     assert "| Variant | Run | Macro F1 | Accuracy | Trash F1 |" in md
     assert "| +aug | mobilenet_v2_aug | 0.600 | 0.650 | 0.250 |" in md
     assert "modified_cnn" in md and "mobilenet_v2_syn" in md  # runs that haven't happened yet still get a row
+
+
+def test_results_markdown_marks_empty_synthetic(tmp_path):
+    import json
+
+    from src.report import build_summary, results_markdown
+
+    _fake_run(tmp_path, tmp_path, "mobilenet_v2_syn", "mobilenet_v2", 0.7, 0.6)
+    path = tmp_path / "history_mobilenet_v2_syn.json"
+    history = json.loads(path.read_text(encoding="utf-8"))
+    history["hparams"].update(synthetic=True, n_synthetic=0)
+    path.write_text(json.dumps(history), encoding="utf-8")
+    md = results_markdown(build_summary(reports_dir=tmp_path), [], {"+synthetic": "mobilenet_v2_syn"})
+    assert "| +synthetic (0 synthetic images) | mobilenet_v2_syn |" in md
+
+
+def test_update_readme_replaces_between_markers(tmp_path):
+    from src.report import README_END, README_START, update_readme
+
+    readme = tmp_path / "README.md"
+    readme.write_text(f"intro\n{README_START}\nold table\n{README_END}\noutro\n", encoding="utf-8")
+    update_readme("| new | table |\n", readme)
+    assert readme.read_text(encoding="utf-8") == f"intro\n{README_START}\n| new | table |\n{README_END}\noutro\n"
+
+    readme.write_text("no markers\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        update_readme("x", readme)
+
+
+def test_readme_has_result_markers():
+    from src.report import README_END, README_START
+
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert text.count(README_START) == 1 and text.count(README_END) == 1
 
 
 def test_plot_loss_curves(tmp_path):

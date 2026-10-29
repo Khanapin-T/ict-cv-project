@@ -12,7 +12,11 @@ import matplotlib.pyplot as plt
 
 from src.dataset import CLASSES
 from src.evaluate import REPORTS_DIR
-from src.train import MODELS_DIR
+from src.train import MODELS_DIR, ROOT
+
+README_PATH = ROOT / "README.md"
+README_START = "<!-- results:start (written by src/report.py update_readme) -->"
+README_END = "<!-- results:end -->"
 
 SUMMARY_COLUMNS = ["run_name", "model_name", "optimizer", "lr", "dropout", "aug", "synthetic", "n_synthetic",
                    "epochs", "best_epoch", "num_params", "train_time_sec", "best_val_f1_macro", "accuracy",
@@ -114,6 +118,18 @@ def results_markdown(rows: list[dict], arch_runs: list[str], data_runs: dict[str
               "| Variant | Run | Macro F1 | Accuracy | Trash F1 |", "|---|---|---|---|---|"]
     for variant, run in data_runs.items():
         r = by_run.get(run)
+        if r and r["synthetic"] and not r["n_synthetic"]:
+            variant += " (0 synthetic images)"  # trained without any: the row is not a real +synthetic result
         lines.append(f"| {variant} | {run} | {_fmt(r, 'f1_macro', f3)} | {_fmt(r, 'accuracy', f3)} | "
                      f"{_fmt(r, 'trash_f1', f3)} |")
     return "\n".join(lines) + "\n"
+
+
+def update_readme(tables: str, readme_path: Path = README_PATH) -> None:
+    """Replace the text between README_START and README_END with `tables`."""
+    text = Path(readme_path).read_text(encoding="utf-8")
+    start, end = text.find(README_START), text.find(README_END)
+    if start < 0 or end < start:
+        raise ValueError(f"{readme_path} has no {README_START} ... {README_END} block")
+    head = text[:start + len(README_START)]
+    Path(readme_path).write_text(f"{head}\n{tables.rstrip()}\n{text[end:]}", encoding="utf-8")

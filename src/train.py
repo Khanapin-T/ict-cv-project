@@ -29,8 +29,9 @@ OPTIMIZERS = ("adam", "sgd")
 
 
 def check_run_name(run_name: str) -> None:
-    """`best` would overwrite the final model; a path separator would write outside models/ and reports/."""
-    if not run_name or run_name == "best" or "/" in run_name or "\\" in run_name:
+    """`best` (any case: Windows/macOS file names ignore it) would overwrite the final model; a path separator would
+    write outside models/ and reports/."""
+    if not run_name or run_name.lower() == "best" or "/" in run_name or "\\" in run_name:
         raise ValueError(f"Invalid run_name {run_name!r}: must not be 'best' or contain '/' or '\\'")
 
 
