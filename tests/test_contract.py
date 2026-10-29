@@ -426,3 +426,18 @@ def test_compare_optimizers_reuses_adam_run(tmp_path):
         ("baseline_cnn", "adam", 0.001), ("baseline_cnn_sgd", "sgd", 0.01)]
     assert len(rows) == 2
     assert (reports_dir / "optimization_curves.png").stat().st_size > 0
+
+
+# ---------------------------------------------------------------- demo images
+
+
+def test_demo_images_come_from_test_split_only():
+    import csv
+
+    from src.demo_images import pick_test_images
+
+    with open(ROOT / "splits" / "splits.csv", newline="", encoding="utf-8") as f:
+        split_of = {r["path"]: r["split"] for r in csv.DictReader(f)}
+    items = pick_test_images()
+    assert [label for _, label in items] == [i for i in range(6) for _ in range(2)]
+    assert all(split_of[p.relative_to(ROOT).as_posix()] == "test" for p, _ in items)
