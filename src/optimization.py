@@ -4,9 +4,8 @@ Adam uses lr 1e-3 and SGD (momentum 0.9) uses lr 1e-2. Each optimizer uses its o
 because SGD needs a larger step than Adam. So the comparison is between the two optimizers as typically
 configured, not at an identical lr.
 
-The Adam side is Part A's `baseline_cnn` run, reused as is (like Part B reuses `mobilenet_v2`); only
-`baseline_cnn_sgd` is trained here, with the Adam run's epochs, dropout, aug, synthetic, batch size, seed and
-max_batches.
+The Adam side is Part A's `baseline_cnn` run, reused as is; only `baseline_cnn_sgd` is trained here, with the
+Adam run's epochs, dropout, batch size, seed and max_batches.
 
 Example:
     python src/optimization.py               # after Part A's baseline_cnn run
@@ -48,7 +47,7 @@ def compare_optimizers(adam_run: str = "baseline_cnn", lr_sgd: float = 1e-2, *, 
     hp = adam["hparams"]
     sgd_run = f"{adam_run}_sgd"
     kwargs = {"batch_size": hp["batch_size"], "seed": hp["seed"], "max_batches": hp["max_batches"], **train_kwargs}
-    train(adam["model_name"], hp["epochs"], lr_sgd, "sgd", hp["dropout"], hp["aug"], hp["synthetic"], sgd_run,
+    train(adam["model_name"], hp["epochs"], lr_sgd, "sgd", hp["dropout"], sgd_run,
           models_dir=models_dir, reports_dir=reports_dir, **kwargs)
 
     runs = [adam_run, sgd_run]

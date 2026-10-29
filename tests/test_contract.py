@@ -43,7 +43,7 @@ def test_eval_transform_shape():
 
 @needs_data
 def test_dataloaders_batches():
-    loaders = dataset.get_dataloaders(4, aug=False, synthetic=False)
+    loaders = dataset.get_dataloaders(4)
     for loader, n in zip(loaders, (1744, 374, 374)):
         assert len(loader.dataset) == n
         x, y = next(iter(loader))
@@ -52,50 +52,27 @@ def test_dataloaders_batches():
 
 
 @needs_data
-def test_aug_train_only():
-    train, val, test = dataset.get_dataloaders(4, aug=True, synthetic=False)
-    assert train.dataset.transform is dataset.TRAIN_AUG_TRANSFORM
-    assert val.dataset.transform is dataset.EVAL_TRANSFORM
-    assert test.dataset.transform is dataset.EVAL_TRANSFORM
+def test_every_split_uses_eval_transform():
+    train, val, test = dataset.get_dataloaders(4)
+    assert all(loader.dataset.transform is dataset.EVAL_TRANSFORM for loader in (train, val, test))
 
 
 @needs_data
-def test_synthetic_train_only(tmp_path, monkeypatch):
-    for cls in CLASSES:
-        (tmp_path / cls).mkdir()
-        Image.new("RGBA", (300, 200), (10, 20, 30, 128)).save(tmp_path / cls / "a.png")
-        Image.new("L", (64, 80), 128).save(tmp_path / cls / "b.jpg")
-        Image.new("RGBA", (120, 90), (200, 100, 50, 255)).save(tmp_path / cls / "c.webp")
-        Image.new("RGB", (100, 100)).save(tmp_path / cls / "d.WEBP", format="WEBP")
-    monkeypatch.setattr(dataset, "SYNTHETIC_DIR", tmp_path)
+def test_train_shuffle_is_seeded():
+    def first_labels(seed):
+        return next(iter(dataset.get_dataloaders(16, seed=seed)[0]))[1].tolist()
 
-    train, val, test = dataset.get_dataloaders(4, aug=False, synthetic=True)
-    assert len(train.dataset) == 1744 + 24
-    assert train.dataset.n_synthetic == 24
-    assert {p.suffix for p, _ in dataset.synthetic_items()} == {".png", ".jpg", ".webp", ".WEBP"}
-    assert (len(val.dataset), len(test.dataset)) == (374, 374)
-    ds = train.dataset
-    for i in range(len(ds) - 24, len(ds)):
-        x, y = ds[i]
-        assert x.shape == (3, 224, 224)
-        assert CLASSES[y] == ds.items[i][0].parent.name
+    assert first_labels(42) == first_labels(42)
+    assert first_labels(42) != first_labels(7)
 
 
 @needs_data
-def test_synthetic_empty_warns(tmp_path, monkeypatch):
-    monkeypatch.setattr(dataset, "SYNTHETIC_DIR", tmp_path)
-    with pytest.warns(UserWarning, match="synthetic"):
-        train, _, _ = dataset.get_dataloaders(4, aug=False, synthetic=True)
-    assert train.dataset.n_synthetic == 0
-    assert len(train.dataset) == 1744
-
-
 def test_missing_raw_data_message(tmp_path, monkeypatch):
     csv_path = tmp_path / "splits.csv"
     csv_path.write_text("path,label,split\ndata/raw/cardboard/__missing__.jpg,cardboard,train\n", encoding="utf-8")
     monkeypatch.setattr(dataset, "SPLITS_CSV", csv_path)
     with pytest.raises(FileNotFoundError, match="prepare_split"):
-        dataset.get_dataloaders(4, aug=False, synthetic=False)
+        dataset.get_dataloaders(4)
 
     monkeypatch.setattr(dataset, "SPLITS_CSV", tmp_path / "nope.csv")
     with pytest.raises(FileNotFoundError, match="prepare_split"):
@@ -104,14 +81,14 @@ def test_missing_raw_data_message(tmp_path, monkeypatch):
 
 # ---------------------------------------------------------------- models
 
-MODEL_NAMES = ["baseline_cnn", "modified_cnn", "mobilenet_v2"]
+MODEL_NAMES = ["baseline_cnn", "modified_cnn"]
 
 
 @pytest.mark.parametrize("name", MODEL_NAMES)
 def test_models_forward(name):
     from src.models import get_model
 
-    model = get_model(name, pretrained=False).eval()
+    model = get_model(name).eval()
     with torch.no_grad():
         assert model(torch.randn(2, 3, 224, 224)).shape == (2, 6)
 
@@ -120,8 +97,8 @@ def test_models_forward(name):
 def test_dropout_keeps_state_dict_keys(name):
     from src.models import get_model
 
-    a = get_model(name, dropout=0.0, pretrained=False).state_dict()
-    b = get_model(name, dropout=0.3, pretrained=False).state_dict()
+    a = get_model(name, dropout=0.0).state_dict()
+    b = get_model(name, dropout=0.3).state_dict()
     assert a.keys() == b.keys()
     assert all(a[k].shape == b[k].shape for k in a)
 
@@ -142,6 +119,8 @@ def test_unknown_model_raises():
 
     with pytest.raises(ValueError):
         get_model("resnet50")
+    with pytest.raises(ValueError):
+        get_model("mobilenet_v2")  # removed: option 1 compares CNNs trained from scratch
 
 
 # ---------------------------------------------------------------- evaluate
@@ -175,8 +154,7 @@ def test_evaluate_outputs(tmp_path):
 
 HISTORY_KEYS = {"run_name", "model_name", "num_params", "train_time_sec", "train_loss", "val_loss", "val_f1_macro",
                 "best_epoch", "best_val_f1_macro", "hparams"}
-HPARAM_KEYS = {"epochs", "lr", "optimizer", "dropout", "aug", "synthetic", "n_synthetic", "batch_size", "seed",
-               "max_batches"}
+HPARAM_KEYS = {"epochs", "lr", "optimizer", "dropout", "batch_size", "seed", "max_batches"}
 
 
 def _leading_params(fn, n):
@@ -193,13 +171,13 @@ def test_signatures():
     from src.models import get_model
     from src.train import train
 
-    assert _leading_params(get_dataloaders, 3) == ["batch_size", "aug", "synthetic"]
+    params = inspect.signature(get_dataloaders).parameters
+    assert list(params)[0] == "batch_size"
+    assert all(p.kind is inspect.Parameter.KEYWORD_ONLY for p in list(params.values())[1:])
     params = inspect.signature(get_model).parameters
-    assert list(params)[:3] == ["name", "num_classes", "dropout"]
+    assert list(params) == ["name", "num_classes", "dropout"]
     assert (params["num_classes"].default, params["dropout"].default) == (6, 0.0)
-    assert params["pretrained"].kind is inspect.Parameter.KEYWORD_ONLY and params["pretrained"].default is True
-    assert _leading_params(train, 8) == ["model_name", "epochs", "lr", "optimizer", "dropout", "aug", "synthetic",
-                                         "run_name"]
+    assert _leading_params(train, 6) == ["model_name", "epochs", "lr", "optimizer", "dropout", "run_name"]
     assert _leading_params(evaluate, 4) == ["model", "loader", "class_names", "run_name"]
 
 
@@ -212,13 +190,12 @@ def test_train_smoke_every_model(name, tmp_path):
     from src.train import train
 
     models_dir, reports_dir = tmp_path / "models", tmp_path / "reports"
-    result = train(name, epochs=1, lr=1e-3, optimizer="adam", dropout=0.2, aug=True, synthetic=False,
-                   run_name=f"smoke_{name}", batch_size=4, max_batches=1, pretrained=False,
-                   models_dir=models_dir, reports_dir=reports_dir)
+    result = train(name, epochs=1, lr=1e-3, optimizer="adam", dropout=0.2, run_name=f"smoke_{name}", batch_size=4,
+                   max_batches=1, models_dir=models_dir, reports_dir=reports_dir)
 
     assert set(result) == EXP_KEYS
     state = torch.load(models_dir / f"smoke_{name}.pth", map_location="cpu", weights_only=True)
-    get_model(name, pretrained=False).load_state_dict(state)
+    get_model(name).load_state_dict(state)
     history = json.loads((reports_dir / f"history_smoke_{name}.json").read_text(encoding="utf-8"))
     assert set(history) == HISTORY_KEYS
     assert set(history["hparams"]) == HPARAM_KEYS
@@ -228,19 +205,34 @@ def test_train_smoke_every_model(name, tmp_path):
     assert (reports_dir / f"cm_smoke_{name}.png").exists()
 
 
+@needs_data
+def test_train_same_seed_same_run(tmp_path):
+    """Same seed -> same weight init and batch order, so the 3 runs differ only in what is compared."""
+    import json
+
+    from src.train import train
+
+    losses = []
+    for run in ("seed_a", "seed_b"):
+        train("baseline_cnn", epochs=1, lr=1e-3, optimizer="adam", dropout=0.3, run_name=run, batch_size=4,
+              max_batches=2, models_dir=tmp_path, reports_dir=tmp_path)
+        losses.append(json.loads((tmp_path / f"history_{run}.json").read_text(encoding="utf-8"))["train_loss"])
+    assert losses[0] == losses[1]
+
+
 @pytest.mark.parametrize("run_name", ["best", "Best", "BEST", "a/b", r"a\b"])
 def test_train_rejects_bad_run_name(run_name, tmp_path):
     from src.train import train
 
     with pytest.raises(ValueError):
-        train("baseline_cnn", 1, 1e-3, "adam", 0.0, False, False, run_name, models_dir=tmp_path, reports_dir=tmp_path)
+        train("baseline_cnn", 1, 1e-3, "adam", 0.0, run_name, models_dir=tmp_path, reports_dir=tmp_path)
 
 
 def test_train_rejects_unknown_optimizer(tmp_path):
     from src.train import train
 
     with pytest.raises(ValueError):
-        train("baseline_cnn", 1, 1e-3, "rmsprop", 0.0, False, False, "x", models_dir=tmp_path, reports_dir=tmp_path)
+        train("baseline_cnn", 1, 1e-3, "rmsprop", 0.0, "x", models_dir=tmp_path, reports_dir=tmp_path)
 
 
 @needs_data
@@ -249,7 +241,7 @@ def test_train_cli_smoke(tmp_path):
     import sys
 
     cmd = [sys.executable, str(ROOT / "src" / "train.py"), "--model", "baseline_cnn", "--epochs", "1",
-           "--max-batches", "1", "--batch-size", "4", "--optimizer", "sgd", "--lr", "0.01", "--aug",
+           "--max-batches", "1", "--batch-size", "4", "--optimizer", "sgd", "--lr", "0.01",
            "--run-name", "cli", "--models-dir", str(tmp_path / "m"), "--reports-dir", str(tmp_path / "r")]
     subprocess.run(cmd, check=True, cwd=tmp_path, capture_output=True, timeout=300)
     assert (tmp_path / "m" / "cli.pth").exists()
@@ -258,12 +250,11 @@ def test_train_cli_smoke(tmp_path):
 
 # ---------------------------------------------------------------- report + optimization
 
-SUMMARY_COLUMNS = ["run_name", "model_name", "optimizer", "lr", "dropout", "aug", "synthetic", "n_synthetic", "epochs",
-                   "best_epoch", "num_params", "train_time_sec", "best_val_f1_macro", "accuracy", "precision_macro",
+SUMMARY_COLUMNS = ["run_name", "model_name", "optimizer", "lr", "dropout", "epochs", "best_epoch", "num_params", "train_time_sec", "best_val_f1_macro", "accuracy", "precision_macro",
                    "recall_macro", "f1_macro", "trash_f1"]
 
 
-def _fake_run(reports_dir, models_dir, run, model_name, val_f1, test_f1):
+def _fake_run(reports_dir, models_dir, run, model_name, val_f1, test_f1, optimizer="adam", lr=1e-3):
     """Write history/exp JSON (and a checkpoint) like train() does, without training."""
     import json
 
@@ -271,8 +262,8 @@ def _fake_run(reports_dir, models_dir, run, model_name, val_f1, test_f1):
 
     reports_dir.mkdir(parents=True, exist_ok=True)
     models_dir.mkdir(parents=True, exist_ok=True)
-    hparams = {"epochs": 2, "lr": 1e-3, "optimizer": "adam", "dropout": 0.3, "aug": False, "synthetic": False,
-               "n_synthetic": 0, "batch_size": 32, "seed": 42, "max_batches": None}
+    hparams = {"epochs": 2, "lr": lr, "optimizer": optimizer, "dropout": 0.3, "batch_size": 32, "seed": 42,
+               "max_batches": None}
     history = {"run_name": run, "model_name": model_name, "num_params": 1000, "train_time_sec": 60.0,
                "train_loss": [1.5, 1.0], "val_loss": [1.4, 1.1], "val_f1_macro": [val_f1 - 0.1, val_f1],
                "best_epoch": 2, "best_val_f1_macro": val_f1, "hparams": hparams}
@@ -282,7 +273,7 @@ def _fake_run(reports_dir, models_dir, run, model_name, val_f1, test_f1):
            "f1_macro": test_f1, "per_class": per_class, "confusion_matrix": [[0] * 6] * 6}
     (reports_dir / f"history_{run}.json").write_text(json.dumps(history), encoding="utf-8")
     (reports_dir / f"exp_{run}.json").write_text(json.dumps(exp), encoding="utf-8")
-    torch.save(get_model(model_name, pretrained=False).state_dict(), models_dir / f"{run}.pth")
+    torch.save(get_model(model_name).state_dict(), models_dir / f"{run}.pth")
 
 
 def test_build_summary_columns(tmp_path):
@@ -319,14 +310,14 @@ def test_export_best_keeps_best_from_earlier_session(tmp_path):
 
     from src.report import export_best
 
-    _fake_run(tmp_path, tmp_path, "mobilenet_v2", "mobilenet_v2", val_f1=0.9, test_f1=0.8)
-    _fake_run(tmp_path, tmp_path, "mobilenet_v2_aug", "mobilenet_v2", val_f1=0.7, test_f1=0.7)
-    (tmp_path / "mobilenet_v2.pth").rename(tmp_path / "best.pth")
-    config = {"arch": "mobilenet_v2", "classes": CLASSES, "run_name": "mobilenet_v2"}
+    _fake_run(tmp_path, tmp_path, "modified_cnn", "modified_cnn", val_f1=0.9, test_f1=0.8)
+    _fake_run(tmp_path, tmp_path, "baseline_cnn_sgd", "baseline_cnn", val_f1=0.7, test_f1=0.7, optimizer="sgd")
+    (tmp_path / "modified_cnn.pth").rename(tmp_path / "best.pth")
+    config = {"arch": "modified_cnn", "classes": CLASSES, "run_name": "modified_cnn"}
     (tmp_path / "config.json").write_text(json.dumps(config), encoding="utf-8")
     before = (tmp_path / "best.pth").read_bytes()
 
-    assert export_best(["mobilenet_v2", "mobilenet_v2_aug"], reports_dir=tmp_path, models_dir=tmp_path) == "mobilenet_v2"
+    assert export_best(["modified_cnn", "baseline_cnn_sgd"], reports_dir=tmp_path, models_dir=tmp_path) == "modified_cnn"
     assert (tmp_path / "best.pth").read_bytes() == before
     assert json.loads((tmp_path / "config.json").read_text(encoding="utf-8")) == config
 
@@ -336,42 +327,42 @@ def test_export_best_missing_checkpoint_raises(tmp_path):
 
     from src.report import export_best
 
-    _fake_run(tmp_path, tmp_path, "mobilenet_v2", "mobilenet_v2", val_f1=0.9, test_f1=0.8)
+    _fake_run(tmp_path, tmp_path, "modified_cnn", "modified_cnn", val_f1=0.9, test_f1=0.8)
     _fake_run(tmp_path, tmp_path, "baseline_cnn", "baseline_cnn", val_f1=0.5, test_f1=0.5)
-    (tmp_path / "mobilenet_v2.pth").unlink()
+    (tmp_path / "modified_cnn.pth").unlink()
     (tmp_path / "baseline_cnn.pth").rename(tmp_path / "best.pth")
     (tmp_path / "config.json").write_text(json.dumps({"arch": "baseline_cnn", "classes": CLASSES,
                                                       "run_name": "baseline_cnn"}), encoding="utf-8")
-    with pytest.raises(FileNotFoundError, match="mobilenet_v2"):
-        export_best(["mobilenet_v2", "baseline_cnn"], reports_dir=tmp_path, models_dir=tmp_path)
+    with pytest.raises(FileNotFoundError, match="modified_cnn"):
+        export_best(["modified_cnn", "baseline_cnn"], reports_dir=tmp_path, models_dir=tmp_path)
 
 
 def test_results_markdown_has_both_tables(tmp_path):
     from src.report import build_summary, results_markdown
 
-    for run, model in [("baseline_cnn", "baseline_cnn"), ("mobilenet_v2", "mobilenet_v2"),
-                       ("mobilenet_v2_aug", "mobilenet_v2")]:
-        _fake_run(tmp_path, tmp_path, run, model, 0.7, 0.6)
-    md = results_markdown(build_summary(reports_dir=tmp_path), ["baseline_cnn", "modified_cnn", "mobilenet_v2"],
-                          {"original": "mobilenet_v2", "+aug": "mobilenet_v2_aug", "+synthetic": "mobilenet_v2_syn"})
+    _fake_run(tmp_path, tmp_path, "baseline_cnn", "baseline_cnn", 0.7, 0.6)
+    _fake_run(tmp_path, tmp_path, "baseline_cnn_sgd", "baseline_cnn", 0.65, 0.55, optimizer="sgd", lr=1e-2)
+    md = results_markdown(build_summary(reports_dir=tmp_path), ["baseline_cnn", "modified_cnn"],
+                          ["baseline_cnn", "baseline_cnn_sgd"])
     assert "| Model | Run | Macro F1 | Accuracy | Params | Train time |" in md
-    assert "| Variant | Run | Macro F1 | Accuracy | Trash F1 |" in md
-    assert "| +aug | mobilenet_v2_aug | 0.600 | 0.650 | 0.250 |" in md
-    assert "modified_cnn" in md and "mobilenet_v2_syn" in md  # runs that haven't happened yet still get a row
+    assert "| Optimizer | Run | lr | Macro F1 | Accuracy | Best epoch | Train time |" in md
+    assert "| adam | baseline_cnn | 0.001 | 0.600 | 0.650 | 2 | 1.0 min |" in md
+    assert "| sgd | baseline_cnn_sgd | 0.01 | 0.550 | 0.600 | 2 | 1.0 min |" in md
+    assert "| modified_cnn | modified_cnn | — |" in md  # runs that haven't happened yet still get a row
 
 
-def test_results_markdown_marks_empty_synthetic(tmp_path):
+def test_smoke_runs_are_flagged(tmp_path):
     import json
 
-    from src.report import build_summary, results_markdown
+    from src.report import smoke_runs
 
-    _fake_run(tmp_path, tmp_path, "mobilenet_v2_syn", "mobilenet_v2", 0.7, 0.6)
-    path = tmp_path / "history_mobilenet_v2_syn.json"
+    _fake_run(tmp_path, tmp_path, "baseline_cnn", "baseline_cnn", 0.7, 0.6)
+    _fake_run(tmp_path, tmp_path, "modified_cnn", "modified_cnn", 0.7, 0.6)
+    path = tmp_path / "history_modified_cnn.json"
     history = json.loads(path.read_text(encoding="utf-8"))
-    history["hparams"].update(synthetic=True, n_synthetic=0)
+    history["hparams"]["max_batches"] = 2
     path.write_text(json.dumps(history), encoding="utf-8")
-    md = results_markdown(build_summary(reports_dir=tmp_path), [], {"+synthetic": "mobilenet_v2_syn"})
-    assert "| +synthetic (0 synthetic images) | mobilenet_v2_syn |" in md
+    assert smoke_runs(tmp_path) == ["modified_cnn"]
 
 
 def test_update_readme_replaces_between_markers(tmp_path):
@@ -418,8 +409,8 @@ def test_compare_optimizers_reuses_adam_run(tmp_path):
     from src.train import train
 
     models_dir, reports_dir = tmp_path / "models", tmp_path / "reports"
-    train("baseline_cnn", epochs=1, lr=1e-3, optimizer="adam", dropout=0.3, aug=False, synthetic=False,
-          run_name="baseline_cnn", batch_size=4, max_batches=1, models_dir=models_dir, reports_dir=reports_dir)
+    train("baseline_cnn", epochs=1, lr=1e-3, optimizer="adam", dropout=0.3, run_name="baseline_cnn", batch_size=4,
+          max_batches=1, models_dir=models_dir, reports_dir=reports_dir)
     adam_history = reports_dir / "history_baseline_cnn.json"
     mtime = adam_history.stat().st_mtime_ns
 
@@ -428,6 +419,7 @@ def test_compare_optimizers_reuses_adam_run(tmp_path):
     assert adam_history.stat().st_mtime_ns == mtime
     sgd = json.loads((reports_dir / "history_baseline_cnn_sgd.json").read_text(encoding="utf-8"))["hparams"]
     assert (sgd["optimizer"], sgd["lr"], sgd["epochs"], sgd["dropout"], sgd["max_batches"]) == ("sgd", 0.01, 1, 0.3, 1)
+    assert sgd["seed"] == json.loads(adam_history.read_text(encoding="utf-8"))["hparams"]["seed"]
     with open(reports_dir / "optimization.csv", newline="", encoding="utf-8") as f:
         csv_rows = list(csv.DictReader(f))
     assert [(r["run_name"], r["optimizer"], float(r["lr"])) for r in csv_rows] == [

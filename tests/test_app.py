@@ -26,7 +26,7 @@ def install_model():
     """Returns install(arch, weights_arch) that writes a dummy model; removes both files afterwards."""
 
     def install(arch: str, weights_arch: str | None = None) -> None:
-        torch.save(get_model(weights_arch or arch, dropout=0.3, pretrained=False).state_dict(), MODEL_PATH)
+        torch.save(get_model(weights_arch or arch, dropout=0.3).state_dict(), MODEL_PATH)
         CONFIG_PATH.write_text(json.dumps({"arch": arch, "classes": CLASSES, "run_name": "test"}), encoding="utf-8")
 
     st.cache_resource.clear()
@@ -59,7 +59,7 @@ def test_no_model_shows_notice():
 
 @pytest.mark.skipif(not SAMPLE.exists(), reason="data/raw/ is missing; run python src/prepare_split.py")
 def test_prediction_with_dummy_model(install_model):
-    install_model("mobilenet_v2")
+    install_model("baseline_cnn")
     at = run_app(("glass1.jpg", SAMPLE.read_bytes(), "image/jpeg"))
     predicted = [m.value for m in at.metric if m.label == "Predicted class"]
     assert len(predicted) == 1 and predicted[0] in CLASSES
@@ -67,12 +67,12 @@ def test_prediction_with_dummy_model(install_model):
 
 
 def test_unreadable_upload_shows_error(install_model):
-    install_model("mobilenet_v2")
+    install_model("baseline_cnn")
     at = run_app(("broken.jpg", b"not an image", "image/jpeg"))
     assert any("not a readable image" in e.value for e in at.error)
 
 
 def test_mismatched_checkpoint_shows_error(install_model):
-    install_model("mobilenet_v2", weights_arch="baseline_cnn")
+    install_model("modified_cnn", weights_arch="baseline_cnn")
     at = run_app()
     assert any("Could not load the model" in e.value for e in at.error)

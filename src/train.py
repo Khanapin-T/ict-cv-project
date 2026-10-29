@@ -1,7 +1,7 @@
 """Train one run: pick the best epoch on val macro F1, then evaluate it on test (contract: AGENTS.md).
 
 Example:
-    python src/train.py --model mobilenet_v2 --epochs 15 --lr 1e-4 --dropout 0.2 --aug --run-name mobilenet_v2_aug
+    python src/train.py --model baseline_cnn --epochs 30 --lr 1e-3 --dropout 0.3 --run-name baseline_cnn
 """
 
 import argparse
@@ -43,10 +43,18 @@ def make_optimizer(name: str, params, lr: float) -> torch.optim.Optimizer:
     raise ValueError(f"Unknown optimizer {name!r}; expected one of {OPTIMIZERS}")
 
 
-def train(model_name: str, epochs: int, lr: float, optimizer: str, dropout: float, aug: bool, synthetic: bool,
-          run_name: str, *, batch_size: int = 32, max_batches: int | None = None, pretrained: bool = True,
-          num_workers: int | None = None, seed: int = 42, device=None, models_dir: Path = MODELS_DIR,
-          reports_dir: Path = REPORTS_DIR) -> dict:
+def seed_everything(seed: int) -> None:
+    """Same seed for every run: same weight init and batch order, so runs differ only in what is compared."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)  # also seeds CUDA
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+def train(model_name: str, epochs: int, lr: float, optimizer: str, dropout: float, run_name: str, *,
+          batch_size: int = 32, max_batches: int | None = None, num_workers: int | None = None, seed: int = 42,
+          device=None, models_dir: Path = MODELS_DIR, reports_dir: Path = REPORTS_DIR) -> dict:
     """Train, keep the best val-macro-F1 epoch in models_dir/<run>.pth, return its test metrics."""
     check_run_name(run_name)
     if optimizer not in OPTIMIZERS:
@@ -54,13 +62,10 @@ def train(model_name: str, epochs: int, lr: float, optimizer: str, dropout: floa
     device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
     if num_workers is None:
         num_workers = 2 if device.type == "cuda" else 0
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
+    seed_everything(seed)
 
-    train_loader, val_loader, test_loader = get_dataloaders(batch_size, aug, synthetic, num_workers=num_workers,
-                                                            seed=seed)
-    model = get_model(model_name, num_classes=len(CLASSES), dropout=dropout, pretrained=pretrained).to(device)
+    train_loader, val_loader, test_loader = get_dataloaders(batch_size, num_workers=num_workers, seed=seed)
+    model = get_model(model_name, num_classes=len(CLASSES), dropout=dropout).to(device)
     opt = make_optimizer(optimizer, model.parameters(), lr)
     criterion = nn.CrossEntropyLoss()
     models_dir, reports_dir = Path(models_dir), Path(reports_dir)
@@ -107,8 +112,7 @@ def train(model_name: str, epochs: int, lr: float, optimizer: str, dropout: floa
         **history,
         "best_epoch": best_epoch,
         "best_val_f1_macro": best_f1,
-        "hparams": {"epochs": epochs, "lr": lr, "optimizer": optimizer, "dropout": dropout, "aug": aug,
-                    "synthetic": synthetic, "n_synthetic": train_loader.dataset.n_synthetic,
+        "hparams": {"epochs": epochs, "lr": lr, "optimizer": optimizer, "dropout": dropout,
                     "batch_size": batch_size, "seed": seed, "max_batches": max_batches},
     }
     (reports_dir / f"history_{run_name}.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
@@ -124,18 +128,15 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--optimizer", choices=OPTIMIZERS, default="adam")
     parser.add_argument("--dropout", type=float, default=0.0)
-    parser.add_argument("--aug", action="store_true", help="augment the train set")
-    parser.add_argument("--synthetic", action="store_true", help="add data/extra/synthetic/ to the train set")
     parser.add_argument("--run-name", required=True)
     parser.add_argument("--max-batches", type=int, default=None, help="limit every loop (smoke runs)")
     parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument("--no-pretrained", action="store_true", help="mobilenet_v2 without ImageNet weights")
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--models-dir", type=Path, default=MODELS_DIR)
     parser.add_argument("--reports-dir", type=Path, default=REPORTS_DIR)
     a = parser.parse_args()
-    train(a.model, a.epochs, a.lr, a.optimizer, a.dropout, a.aug, a.synthetic, a.run_name,
-          batch_size=a.batch_size, max_batches=a.max_batches, pretrained=not a.no_pretrained,
-          models_dir=a.models_dir, reports_dir=a.reports_dir)
+    train(a.model, a.epochs, a.lr, a.optimizer, a.dropout, a.run_name, batch_size=a.batch_size,
+          max_batches=a.max_batches, seed=a.seed, models_dir=a.models_dir, reports_dir=a.reports_dir)
 
 
 if __name__ == "__main__":

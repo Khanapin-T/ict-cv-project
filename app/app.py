@@ -24,7 +24,7 @@ TOP_K = 3
 def load_model(version: tuple[int, int]) -> tuple[nn.Module, dict]:
     """`version` (the files' mtimes) is the cache key, so a replaced model loads on page reload."""
     config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    model = get_model(config["arch"], num_classes=len(config["classes"]), pretrained=False)
+    model = get_model(config["arch"], num_classes=len(config["classes"]))
     model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu", weights_only=True))
     return model.eval(), config
 
