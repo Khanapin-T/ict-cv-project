@@ -1,6 +1,10 @@
 # Data and model weights
+# Raw data is downloaded by src/prepare_split.py; only synthetic images are tracked.
 data/*
 !data/.gitkeep
+!data/extra/
+data/extra/*
+!data/extra/synthetic/
 *.pth
 *.pt
 *.h5
