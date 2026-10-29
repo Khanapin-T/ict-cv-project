@@ -1,12 +1,9 @@
 # Data and model weights
-# Raw data is downloaded by src/prepare_split.py; only synthetic images are tracked.
+# Raw data is downloaded by src/prepare_split.py and never committed.
 data/*
 !data/.gitkeep
-!data/extra/
-data/extra/*
-!data/extra/synthetic/
 *.pth
-# Only the final model is committed (by Participant 2, see AGENTS.md); per-run checkpoints stay local.
+# Only the final model is committed (see AGENTS.md); per-run checkpoints stay local.
 models/*
 !models/.gitkeep
 !models/best.pth

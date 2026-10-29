@@ -1,16 +1,16 @@
 # SmartWaste AI
 
 SmartWaste AI classifies photos of household waste into the 6 [TrashNet](https://huggingface.co/datasets/garythung/trashnet) classes
-(cardboard, glass, metal, paper, plastic, trash). It compares CNNs trained from scratch with transfer learning from
-**MobileNetV2**. It's a small step toward automated waste sorting.
+(cardboard, glass, metal, paper, plastic, trash) with CNNs trained from scratch. It's a small step toward automated
+waste sorting.
 
 ## Goal
 
-1. Train a **baseline CNN** and a **modified CNN** (the baseline plus one extra conv block), and fine-tune an
-   ImageNet-pretrained **MobileNetV2**.
-2. Measure the effect of **data augmentation**, **synthetic images** and training settings (optimizer, learning rate,
-   dropout).
-3. Compare all runs on the same fixed, deduplicated test split. **Macro F1 is the main metric.** Accuracy, macro
+The project keeps the open dataset fixed and changes the ML algorithm:
+
+1. **Layers:** a **baseline CNN** vs a **modified CNN** (the baseline plus one extra conv block), both with Adam.
+2. **Optimizer:** the baseline CNN with **Adam** vs **SGD** (momentum 0.9).
+3. Compare the 3 runs on the same fixed, deduplicated test split. **Macro F1 is the main metric.** Accuracy, macro
    precision/recall, per-class metrics and confusion matrices are reported too.
 4. Serve the best model in a Streamlit demo, packaged with Docker.
 
@@ -18,11 +18,11 @@ SmartWaste AI classifies photos of household waste into the 6 [TrashNet](https:/
 
 | Member | Defence topic |
 |---|---|
-| Participant 1 | Data: dataset & splits, augmentation, synthetic images, data analysis, evaluation |
-| Participant 2 | Models & training: baseline/modified CNN, MobileNetV2, training loop, results |
+| Participant 1 | Data: dataset & splits, data analysis, evaluation |
+| Participant 2 | Models & training: baseline/modified CNN, training loop, results |
 | Tair | Optimization (Adam vs SGD), app, Docker |
 
-Shared rules (the fixed split, the train-only augmentation and synthetic data, and the interface contract) are in
+Shared rules (the fixed split and the interface contract) are in
 [AGENTS.md](AGENTS.md). Read it before changing code.
 
 ## Dataset
@@ -51,8 +51,6 @@ two classes** (glass/metal, glass/plastic ×2), so both copies were dropped as l
 [reports/class_counts.csv](reports/class_counts.csv), and every duplicate pair is in
 [reports/duplicates.csv](reports/duplicates.csv).
 
-Synthetic training images go in `data/extra/synthetic/<class>/` and are used **only for training**.
-
 ## Experiments
 
 All runs use the same split and eval protocol. The best epoch of each run is picked on **val** macro F1; the metrics
@@ -61,35 +59,39 @@ time, parameter count, hyperparameters), `reports/exp_<run>.json` (test metrics)
 matrix). All runs together are in `reports/summary.csv` and `reports/loss_curves.png`. The tables below are written by
 `notebooks/colab_train.ipynb` (`update_readme`); "—" means the run hasn't happened yet.
 
-Part A compares architectures on the original data (no augmentation, no synthetic images). CNNs: Adam, lr 1e-3, 30 epochs,
-dropout 0.3. MobileNetV2: Adam, lr 1e-4, 15 epochs, dropout 0.2. Part B trains mobilenet_v2 with the same
-hyperparameters on each data variant; "original" is run `mobilenet_v2` from A.
+Three runs, all on the same data (no augmentation, no extra images) with the same seed (42: weight init and batch
+order), 30 epochs, batch size 32 and dropout 0.3:
+
+| Run | Model | Optimizer | Part |
+|---|---|---|---|
+| `baseline_cnn` | baseline CNN (3 conv blocks) | Adam, lr 1e-3 | A and C |
+| `modified_cnn` | baseline + 1 conv block (4) | Adam, lr 1e-3 | A |
+| `baseline_cnn_sgd` | baseline CNN (3 conv blocks) | SGD momentum 0.9, lr 1e-2 | C |
+
+Part A compares architectures (layers), part C compares optimizers.
 
 <!-- results:start (written by src/report.py update_readme) -->
-**A) Architectures** (test set; best epoch picked on val macro F1)
+**A) Architectures** (Adam, test set; best epoch picked on val macro F1)
 
 | Model | Run | Macro F1 | Accuracy | Params | Train time |
 |---|---|---|---|---|---|
 | baseline_cnn | baseline_cnn | — | — | — | — |
 | modified_cnn | modified_cnn | — | — | — | — |
-| mobilenet_v2 | mobilenet_v2 | — | — | — | — |
 
-**B) Data variants** (mobilenet_v2, test set)
+**C) Optimizers** (baseline_cnn, test set)
 
-| Variant | Run | Macro F1 | Accuracy | Trash F1 |
-|---|---|---|---|---|
-| original | mobilenet_v2 | — | — | — |
-| +aug | mobilenet_v2_aug | — | — | — |
-| +synthetic | mobilenet_v2_syn | — | — | — |
-| +aug+synthetic | mobilenet_v2_aug_syn | — | — | — |
+| Optimizer | Run | lr | Macro F1 | Accuracy | Best epoch | Train time |
+|---|---|---|---|---|---|---|
+| — | baseline_cnn | — | — | — | — | — |
+| — | baseline_cnn_sgd | — | — | — | — | — |
 <!-- results:end -->
 
-The model with the best **val** macro F1 among A and B is exported as `models/best.pth` + `models/config.json`.
+The run with the best **val** macro F1 of the three is exported as `models/best.pth` + `models/config.json`.
 
 ### Optimization
 
 Adam vs SGD (momentum 0.9) on `baseline_cnn` (`src/optimization.py`). The Adam side is part A's `baseline_cnn` run,
-reused and not retrained; the SGD side is `baseline_cnn_sgd`, trained with the same epochs, dropout and data.
+reused and not retrained; the SGD side is `baseline_cnn_sgd`, trained with the same epochs, dropout, seed and data.
 Adam uses lr 1e-3 and SGD (momentum 0.9) uses lr 1e-2. Each optimizer uses its own standard learning rate, because SGD needs a larger step than Adam. So the comparison is between the two optimizers as typically configured, not at an identical lr.
 
 Results: [reports/optimization.csv](reports/optimization.csv) and `reports/optimization_curves.png` (train loss and
@@ -108,16 +110,17 @@ val macro F1 per epoch).
    `models/best.pth`, `models/config.json`). With `PUSH_RESULTS = True` (not allowed with `QUICK`) they are also
    committed and pushed to `main`.
 
-**Running the parts separately** (e.g. A + C now, B once synthetic images are in): set `RUN_PARTS = {"A", "C"}`,
-later `RUN_PARTS = {"B"}`. The results cells always merge every run in `reports/`, so the summary, README tables and
+**Running the parts separately** (e.g. A now, C later): set `RUN_PARTS = {"A"}`, later `RUN_PARTS = {"C"}`. The results cells always merge every run in `reports/`, so the summary, README tables and
 best model cover all runs so far. A new Colab session is a fresh clone, so carry the earlier results over with
 `PUSH_RESULTS = True`, or by uploading the earlier `results.zip` to `/content/` before *Run all*. Per-run checkpoints
-are not kept between sessions; if the best run is an earlier one, its exported `models/best.pth` stays.
+are not kept between sessions; if the best run is an earlier one, its exported `models/best.pth` stays. Results of
+`QUICK` runs are never pushed: the push cell refuses while `reports/` holds any run trained with `max_batches`.
 
 **CLI, one run:**
 
 ```bash
-python src/train.py --model mobilenet_v2 --epochs 15 --lr 1e-4 --dropout 0.2 --aug --run-name mobilenet_v2_aug
+python src/train.py --model baseline_cnn --epochs 30 --lr 1e-3 --dropout 0.3 --run-name baseline_cnn
+python src/train.py --model modified_cnn --epochs 30 --lr 1e-3 --dropout 0.3 --run-name modified_cnn
 python src/optimization.py                  # after the baseline_cnn run
 python src/train.py --model baseline_cnn --epochs 1 --max-batches 2 --run-name smoke   # quick CPU check
 ```
@@ -133,8 +136,8 @@ pytest -q
 ```
 AGENTS.md              shared rules for the team and coding agents (CLAUDE.md imports it)
 src/prepare_split.py   download TrashNet, dedup, fixed split
-src/dataset.py         get_dataloaders(batch_size, aug, synthetic)
-src/models.py          get_model(name): baseline_cnn, modified_cnn, mobilenet_v2
+src/dataset.py         get_dataloaders(batch_size)
+src/models.py          get_model(name): baseline_cnn, modified_cnn
 src/train.py           train() + CLI -> models/<run>.pth, reports/history_<run>.json
 src/evaluate.py        evaluate() -> reports/exp_<run>.json, reports/cm_<run>.png
 src/optimization.py    Adam vs SGD on baseline_cnn -> reports/optimization.csv
@@ -143,7 +146,6 @@ notebooks/             colab_train.ipynb (all training runs), data_analysis.ipyn
 tests/                 pytest contract and app tests
 splits/splits.csv      fixed train/val/test split (committed)
 data/raw/              TrashNet images (not committed)
-data/extra/synthetic/  synthetic train-only images per class (committed)
 models/                best.pth + config.json: the final model used by the app (committed)
 reports/               class counts, duplicates, data figures, training histories, test metrics
 app/app.py             Streamlit demo

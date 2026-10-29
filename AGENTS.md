@@ -6,10 +6,11 @@ These are the shared rules for everyone working in this repo, people and coding 
 ## Project
 
 SmartWaste AI classifies photos of waste into the 6 TrashNet classes
-`cardboard, glass, metal, paper, plastic, trash`. We compare a baseline CNN, a modified CNN (the baseline
-plus one extra conv block) and an ImageNet-pretrained MobileNetV2, with and without augmentation and
-synthetic data, all on the same fixed split. **The main comparison metric is macro F1.** The best model
-is served in a Streamlit app (Docker).
+`cardboard, glass, metal, paper, plastic, trash`. Assignment option 1: the open dataset stays fixed and only
+the ML algorithm changes. Exactly 3 runs, all on the same fixed split with the same seed:
+`baseline_cnn` + Adam, `modified_cnn` (the baseline plus one extra conv block) + Adam, and `baseline_cnn` + SGD.
+**The main comparison metric is macro F1.** The best of the 3 (by val macro F1) is served in a Streamlit app
+(Docker). No augmentation, no synthetic or extra images, no pretrained models.
 
 ## Data rules (do not break)
 
@@ -22,12 +23,7 @@ is served in a Streamlit app (Docker).
   - Raw images in `data/raw/<class>/` are **not committed**. To get them on a fresh clone, run
     `python src/prepare_split.py`. It downloads them and checks them against the existing split
     without changing the split.
-- **Augmentation and `data/extra/synthetic/` are TRAIN ONLY.** Val and test use only the real images
-  listed in `splits.csv`, with the eval transform below. Never augment val/test, and never put
-  synthetic images into val/test.
-- Synthetic images go in `data/extra/synthetic/<class>/`, where the folder name is the label. They
-  **are committed**. Never put real TrashNet images there. If a synthetic image is derived from a real
-  one (img2img, edits), the source must be a **train** image, never val/test (that would leak).
+- Train, val and test use only the images listed in `splits.csv`, all with the eval transform below.
 - Report metrics on **test**. Choose checkpoints and hyperparameters on **val** only.
 
 ## Interface contract
@@ -36,40 +32,40 @@ These conventions apply to all code:
 
 - **Classes** are in alphabetical order: `["cardboard", "glass", "metal", "paper", "plastic", "trash"]`.
   A label index is the position in this list.
-- **Input** is a `3x224x224` tensor. The eval transform (val/test **and** the app) is
+- **Input** is a `3x224x224` tensor. The eval transform (train, val, test **and** the app) is
   `Resize((224, 224))` → `ToTensor()` → `Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])`.
-  Augmentation is added to the train transform only.
+- **Seed:** every run uses `seed=42` (`random`, `numpy`, `torch`, cuDNN deterministic, and the train
+  DataLoader's shuffle generator), so runs differ only in what is being compared.
 - **Main metric:** macro F1. Use it on val to pick checkpoints and on test to compare runs.
-- **Run names:** use one `run_name` per training run for all of its files (e.g. `mobilenet_v2_aug`).
+- **Run names:** use one `run_name` per training run for all of its files: `baseline_cnn`, `modified_cnn`,
+  `baseline_cnn_sgd`.
   Never use `best`, which would overwrite the final model.
 
 ### `src/dataset.py`
 
-`get_dataloaders(batch_size, aug: bool, synthetic: bool) -> (train_loader, val_loader, test_loader)`
+`get_dataloaders(batch_size, *, num_workers=0, seed=42) -> (train_loader, val_loader, test_loader)`
 
-`aug=True` augments the train set only. `synthetic=True` adds `data/extra/synthetic/<class>/*` to the
-train set only.
+Only the train loader shuffles, with a `torch.Generator` seeded by `seed`.
 
 ### `src/models.py`
 
-`get_model(name, num_classes=6, dropout=0.0, *, pretrained=True) -> nn.Module`
+`get_model(name, num_classes=6, dropout=0.0) -> nn.Module`
 
 | `name` | Model |
 |---|---|
 | `"baseline_cnn"` | baseline CNN |
 | `"modified_cnn"` | baseline CNN + one extra conv block |
-| `"mobilenet_v2"` | torchvision MobileNetV2, ImageNet pretrained, new classifier head |
 
-- `pretrained=False` skips the ImageNet download. The app uses it because it loads `models/best.pth`
-  anyway. The CNNs accept the argument and ignore it.
+Both are trained from scratch.
 - `dropout` must not change the state_dict keys. Always create the `nn.Dropout(dropout)` layer
   (`p=0` is a no-op) so that a checkpoint loads whatever dropout it was trained with.
 - An unknown `name` raises `ValueError`.
 
 ### `src/train.py`
 
-`train(model_name, epochs, lr, optimizer, dropout, aug, synthetic, run_name, ...)`, with a CLI that
-exposes the same options. Each run saves:
+`train(model_name, epochs, lr, optimizer, dropout, run_name, *, batch_size=32, max_batches=None, seed=42, ...)`,
+with a CLI that exposes the same options. `optimizer` is `"adam"` or `"sgd"` (momentum 0.9). `max_batches` is
+for smoke runs only; results of such runs (QUICK mode) are never committed. Each run saves:
 
 - `models/<run>.pth`: `model.state_dict()`. This file stays local (gitignored).
 - `reports/history_<run>.json`: `run_name`, `model_name`, `num_params`, `train_time_sec`, and the
@@ -95,11 +91,11 @@ exposes the same options. Each run saves:
 
 | Member | Topic |
 |---|---|
-| Participant 1 | Data: dataset & splits, augmentation, synthetic images, data analysis, evaluation |
-| Participant 2 | Models & training: baseline/modified CNN, MobileNetV2, training loop, results |
+| Participant 1 | Data: dataset & splits, data analysis, evaluation |
+| Participant 2 | Models & training: baseline/modified CNN, training loop, results |
 | Tair | Optimization (Adam vs SGD), app, Docker |
 
-Tair's agent writes all code. Teammates provide synthetic images and slides.
+Tair's agent writes all code. Teammates prepare the slides for their topics.
 
 ## Git workflow
 
