@@ -1,5 +1,8 @@
-torch
-torchvision
-streamlit
-scikit-learn
-matplotlib
+torch==2.14.1
+torchvision==0.29.1
+streamlit==1.66.0
+scikit-learn==1.9.1
+matplotlib==3.11.2
+datasets==5.1.0
+imagehash==4.3.2
+pillow==12.3.0
