@@ -1,0 +1,29 @@
+# Data and model weights
+data/*
+!data/.gitkeep
+*.pth
+*.pt
+*.h5
+*.ckpt
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environment and IDE
+.env
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
