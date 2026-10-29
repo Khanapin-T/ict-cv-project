@@ -97,3 +97,45 @@ def test_missing_raw_data_message(tmp_path, monkeypatch):
     monkeypatch.setattr(dataset, "SPLITS_CSV", tmp_path / "nope.csv")
     with pytest.raises(FileNotFoundError, match="prepare_split"):
         dataset.read_split("train")
+
+
+# ---------------------------------------------------------------- models
+
+MODEL_NAMES = ["baseline_cnn", "modified_cnn", "mobilenet_v2"]
+
+
+@pytest.mark.parametrize("name", MODEL_NAMES)
+def test_models_forward(name):
+    from src.models import get_model
+
+    model = get_model(name, pretrained=False).eval()
+    with torch.no_grad():
+        assert model(torch.randn(2, 3, 224, 224)).shape == (2, 6)
+
+
+@pytest.mark.parametrize("name", MODEL_NAMES)
+def test_dropout_keeps_state_dict_keys(name):
+    from src.models import get_model
+
+    a = get_model(name, dropout=0.0, pretrained=False).state_dict()
+    b = get_model(name, dropout=0.3, pretrained=False).state_dict()
+    assert a.keys() == b.keys()
+    assert all(a[k].shape == b[k].shape for k in a)
+
+
+def test_modified_has_one_more_block():
+    from torch import nn
+
+    from src.models import get_model
+
+    def n_convs(name):
+        return sum(isinstance(m, nn.Conv2d) for m in get_model(name).modules())
+
+    assert (n_convs("baseline_cnn"), n_convs("modified_cnn")) == (3, 4)
+
+
+def test_unknown_model_raises():
+    from src.models import get_model
+
+    with pytest.raises(ValueError):
+        get_model("resnet50")
