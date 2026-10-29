@@ -251,3 +251,116 @@ def test_train_cli_smoke(tmp_path):
     subprocess.run(cmd, check=True, cwd=tmp_path, capture_output=True, timeout=300)
     assert (tmp_path / "m" / "cli.pth").exists()
     assert (tmp_path / "r" / "history_cli.json").exists()
+
+
+# ---------------------------------------------------------------- report + optimization
+
+SUMMARY_COLUMNS = ["run_name", "model_name", "optimizer", "lr", "dropout", "aug", "synthetic", "n_synthetic", "epochs",
+                   "best_epoch", "num_params", "train_time_sec", "best_val_f1_macro", "accuracy", "precision_macro",
+                   "recall_macro", "f1_macro", "trash_f1"]
+
+
+def _fake_run(reports_dir, models_dir, run, model_name, val_f1, test_f1):
+    """Write history/exp JSON (and a checkpoint) like train() does, without training."""
+    import json
+
+    from src.models import get_model
+
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    models_dir.mkdir(parents=True, exist_ok=True)
+    hparams = {"epochs": 2, "lr": 1e-3, "optimizer": "adam", "dropout": 0.3, "aug": False, "synthetic": False,
+               "n_synthetic": 0, "batch_size": 32, "seed": 42, "max_batches": None}
+    history = {"run_name": run, "model_name": model_name, "num_params": 1000, "train_time_sec": 60.0,
+               "train_loss": [1.5, 1.0], "val_loss": [1.4, 1.1], "val_f1_macro": [val_f1 - 0.1, val_f1],
+               "best_epoch": 2, "best_val_f1_macro": val_f1, "hparams": hparams}
+    per_class = {c: {"precision": 0.5, "recall": 0.5, "f1": 0.25 if c == "trash" else test_f1, "support": 10}
+                 for c in CLASSES}
+    exp = {"run_name": run, "accuracy": test_f1 + 0.05, "precision_macro": test_f1, "recall_macro": test_f1,
+           "f1_macro": test_f1, "per_class": per_class, "confusion_matrix": [[0] * 6] * 6}
+    (reports_dir / f"history_{run}.json").write_text(json.dumps(history), encoding="utf-8")
+    (reports_dir / f"exp_{run}.json").write_text(json.dumps(exp), encoding="utf-8")
+    torch.save(get_model(model_name, pretrained=False).state_dict(), models_dir / f"{run}.pth")
+
+
+def test_build_summary_columns(tmp_path):
+    import csv
+
+    from src.report import build_summary
+
+    _fake_run(tmp_path, tmp_path, "baseline_cnn", "baseline_cnn", 0.6, 0.55)
+    _fake_run(tmp_path, tmp_path, "modified_cnn", "modified_cnn", 0.7, 0.65)
+    rows = build_summary(reports_dir=tmp_path)
+    with open(tmp_path / "summary.csv", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        assert reader.fieldnames == SUMMARY_COLUMNS
+        assert [r["run_name"] for r in reader] == ["baseline_cnn", "modified_cnn"]
+    assert rows[0]["trash_f1"] == 0.25 and rows[1]["f1_macro"] == 0.65
+
+
+def test_export_best_picks_val_not_test(tmp_path):
+    import json
+
+    from src.report import export_best
+
+    _fake_run(tmp_path, tmp_path, "high_val", "baseline_cnn", val_f1=0.8, test_f1=0.5)
+    _fake_run(tmp_path, tmp_path, "high_test", "modified_cnn", val_f1=0.6, test_f1=0.9)
+    assert export_best(["high_val", "high_test"], reports_dir=tmp_path, models_dir=tmp_path) == "high_val"
+    config = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
+    assert config == {"arch": "baseline_cnn", "classes": CLASSES, "run_name": "high_val"}
+    assert (tmp_path / "best.pth").read_bytes() == (tmp_path / "high_val.pth").read_bytes()
+
+
+def test_results_markdown_has_both_tables(tmp_path):
+    from src.report import build_summary, results_markdown
+
+    for run, model in [("baseline_cnn", "baseline_cnn"), ("mobilenet_v2", "mobilenet_v2"),
+                       ("mobilenet_v2_aug", "mobilenet_v2")]:
+        _fake_run(tmp_path, tmp_path, run, model, 0.7, 0.6)
+    md = results_markdown(build_summary(reports_dir=tmp_path), ["baseline_cnn", "modified_cnn", "mobilenet_v2"],
+                          {"original": "mobilenet_v2", "+aug": "mobilenet_v2_aug", "+synthetic": "mobilenet_v2_syn"})
+    assert "| Model | Run | Macro F1 | Accuracy | Params | Train time |" in md
+    assert "| Variant | Run | Macro F1 | Accuracy | Trash F1 |" in md
+    assert "| +aug | mobilenet_v2_aug | 0.600 | 0.650 | 0.250 |" in md
+    assert "modified_cnn" in md and "mobilenet_v2_syn" in md  # runs that haven't happened yet still get a row
+
+
+def test_plot_loss_curves(tmp_path):
+    from src.report import plot_loss_curves
+
+    _fake_run(tmp_path, tmp_path, "baseline_cnn", "baseline_cnn", 0.6, 0.55)
+    plot_loss_curves(["baseline_cnn"], tmp_path / "loss.png", reports_dir=tmp_path)
+    assert (tmp_path / "loss.png").stat().st_size > 0
+
+
+def test_compare_optimizers_requires_adam_run(tmp_path):
+    from src.optimization import compare_optimizers
+
+    with pytest.raises(FileNotFoundError, match="baseline_cnn"):
+        compare_optimizers(reports_dir=tmp_path, models_dir=tmp_path)
+
+
+@needs_data
+def test_compare_optimizers_reuses_adam_run(tmp_path):
+    import csv
+    import json
+
+    from src.optimization import compare_optimizers
+    from src.train import train
+
+    models_dir, reports_dir = tmp_path / "models", tmp_path / "reports"
+    train("baseline_cnn", epochs=1, lr=1e-3, optimizer="adam", dropout=0.3, aug=False, synthetic=False,
+          run_name="baseline_cnn", batch_size=4, max_batches=1, models_dir=models_dir, reports_dir=reports_dir)
+    adam_history = reports_dir / "history_baseline_cnn.json"
+    mtime = adam_history.stat().st_mtime_ns
+
+    rows = compare_optimizers(reports_dir=reports_dir, models_dir=models_dir)
+
+    assert adam_history.stat().st_mtime_ns == mtime
+    sgd = json.loads((reports_dir / "history_baseline_cnn_sgd.json").read_text(encoding="utf-8"))["hparams"]
+    assert (sgd["optimizer"], sgd["lr"], sgd["epochs"], sgd["dropout"], sgd["max_batches"]) == ("sgd", 0.01, 1, 0.3, 1)
+    with open(reports_dir / "optimization.csv", newline="", encoding="utf-8") as f:
+        csv_rows = list(csv.DictReader(f))
+    assert [(r["run_name"], r["optimizer"], float(r["lr"])) for r in csv_rows] == [
+        ("baseline_cnn", "adam", 0.001), ("baseline_cnn_sgd", "sgd", 0.01)]
+    assert len(rows) == 2
+    assert (reports_dir / "optimization_curves.png").stat().st_size > 0
