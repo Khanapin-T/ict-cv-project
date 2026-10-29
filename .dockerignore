@@ -1,4 +1,4 @@
-# Only requirements.txt, app/ and models/ are needed in the image.
+# Only requirements.txt, src/ (the app imports src.models), app/ and models/ are needed in the image.
 .git
 .gitignore
 .venv
@@ -14,7 +14,6 @@ data
 splits
 reports
 notebooks
-src
 docs
 *.md
 Dockerfile

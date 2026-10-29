@@ -16,8 +16,9 @@ RUN pip install $(grep -E '^(torch|torchvision)==' requirements.txt | tr -d '\r'
  && pip install -r requirements.txt
 
 RUN useradd --create-home appuser
+COPY src/ src/
 COPY app/ app/
-# models/best.pth and models/classes.json are baked in if present; otherwise mount them with -v.
+# models/best.pth and models/config.json are baked in if present; otherwise mount them with -v.
 COPY models/ models/
 USER appuser
 
