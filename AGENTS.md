@@ -69,8 +69,8 @@ predicted labels, in `classes` order.
 | Area | Owner |
 |---|---|
 | `src/dataset.py`, data analysis (`notebooks/`) | Participant 1 |
-| `src/train.py`, `src/evaluate.py` | Participant 2 |
-| `app/`, `Dockerfile`, `.dockerignore`, `README.md` | Tair |
+| `src/train.py`, `src/evaluate.py`, `models/best.pth`, `models/classes.json`, results table in `README.md` ("Experiments") | Participant 2 |
+| `app/`, `Dockerfile`, `.dockerignore`, `README.md` (everything except the results table) | Tair |
 | `AGENTS.md`, `requirements.txt`, `src/prepare_split.py`, `splits/`, `data/extra/synthetic/` | shared: change only via a PR the whole team has seen |
 
 Agents: edit only files owned by the person you are working for. If a change is needed in someone
@@ -80,7 +80,11 @@ else's file, describe it in the PR instead of making it.
 
 - Work on your own branch: `data` (Participant 1), `model` (Participant 2), `app` (Tair).
 - Merge through a **PR to `main`**. **No direct pushes to `main`.**
-- Never commit `data/raw/`, `.venv/` or other large generated files. `*.pth` is gitignored.
+- Never commit `data/raw/`, `.venv/` or other large generated files. `*.pth` is gitignored, except
+  `models/best.pth`.
+- **Only Participant 2 commits `models/best.pth` and `models/classes.json`.** Commit them together, in
+  a PR, and only after the results table in `README.md` has been updated for the run they come from.
+  Nobody else commits model files. Other checkpoints stay local.
 - Keep commits small and focused. Write messages in the imperative mood ("Add val loader").
 
 ## Commands

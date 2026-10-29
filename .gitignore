@@ -6,6 +6,8 @@ data/*
 data/extra/*
 !data/extra/synthetic/
 *.pth
+# The final model is committed (by Participant 2 only, see AGENTS.md); other checkpoints stay local.
+!models/best.pth
 *.pt
 *.h5
 *.ckpt
