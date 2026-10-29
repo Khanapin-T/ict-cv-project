@@ -8,23 +8,16 @@ import streamlit as st
 import torch
 from PIL import Image, ImageOps, UnidentifiedImageError
 from torch import nn
-from torchvision import transforms
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))  # streamlit puts app/ on sys.path, not the repo root
 
+from src.dataset import EVAL_TRANSFORM  # the same transform as val/test (AGENTS.md, "Interface contract")
 from src.models import get_model
 
 MODEL_PATH = ROOT / "models" / "best.pth"
 CONFIG_PATH = ROOT / "models" / "config.json"
 TOP_K = 3
-
-# Must match the eval transform in src/dataset.py (see AGENTS.md, "Interface contract").
-EVAL_TRANSFORM = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
 
 
 @st.cache_resource
