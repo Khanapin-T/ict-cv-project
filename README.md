@@ -182,6 +182,10 @@ The app builds the architecture named in `models/config.json` with `src.models.g
 If either file doesn't exist yet, it shows a "model not trained yet" notice instead. A replaced model is picked up on
 page reload.
 
+`demo_images/` has 2 **test-split** photos per class (never seen in training) to upload in the demo.
+`python src/demo_images.py` recreates them from `data/raw/` and prints the app's prediction next to the true class
+and to `evaluate.py`'s batch prediction for the same file.
+
 ### Online (Streamlit Community Cloud)
 
 The app is deployed from this repo with entrypoint `app/app.py`, branch `main`, Python 3.12. Community Cloud installs
