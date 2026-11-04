@@ -61,6 +61,12 @@ time, parameter count, hyperparameters), `reports/exp_<run>.json` (test metrics)
 matrix). All runs together are in `reports/summary.csv` and `reports/loss_curves.png`. The tables below are written by
 `notebooks/colab_train.ipynb` (`update_readme`); "—" means the run hasn't happened yet.
 
+**Training log (evidence).** [reports/training_log.md](reports/training_log.md) lists every epoch of the 3 runs (train
+loss, val loss, val macro F1, best epoch, training time, parameter count) with consistency checks that tie the history,
+the confusion matrix and the test metrics together. It is generated from the JSON files the Colab run saved
+(`python src/training_log.py`, checked by `tests/test_training_log.py`). The run's outputs were committed unchanged in
+`76872cc` on 2026-10-29.
+
 Three runs, all on the same data (no augmentation, no extra images) with the same seed (42: weight init and batch
 order), 30 epochs, batch size 32 and dropout 0.3:
 
