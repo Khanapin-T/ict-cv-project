@@ -4,6 +4,8 @@ SmartWaste AI classifies photos of household waste into the 6 [TrashNet](https:/
 (cardboard, glass, metal, paper, plastic, trash) with CNNs trained from scratch. It's a small step toward automated
 waste sorting.
 
+**Live demo:** https://smartwaste-aiaiai.streamlit.app
+
 ## Goal
 
 The project keeps the open dataset fixed and changes the ML algorithm:
@@ -188,7 +190,8 @@ and to `evaluate.py`'s batch prediction for the same file.
 
 ### Online (Streamlit Community Cloud)
 
-The app is deployed from this repo with entrypoint `app/app.py`, branch `main`, Python 3.12. Community Cloud installs
+Live at https://smartwaste-aiaiai.streamlit.app, deployed from this repo with entrypoint `app/app.py`, branch `main`
+(the Cloud picked Python 3.14). Community Cloud installs
 `app/requirements.txt` (it is next to the entrypoint, so it wins over the root file): only the app's dependencies, with
 CPU-only torch/torchvision. Keep its pins in sync with the root `requirements.txt`. Every push to `main` redeploys.
 
