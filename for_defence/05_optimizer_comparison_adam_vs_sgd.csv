@@ -1,0 +1,3 @@
+run_name,optimizer,lr,best_epoch,best_val_f1_macro,f1_macro,accuracy,train_time_sec
+baseline_cnn,adam,0.001,22,0.8128903227742064,0.7683332730338152,0.7807486631016043,241.0
+baseline_cnn_sgd,sgd,0.01,25,0.7806183598676334,0.7924669535225558,0.8101604278074866,241.4
