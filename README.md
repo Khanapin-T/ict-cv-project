@@ -148,7 +148,7 @@ splits/splits.csv      fixed train/val/test split (committed)
 data/raw/              TrashNet images (not committed)
 models/                best.pth + config.json: the final model used by the app (committed)
 reports/               class counts, duplicates, data figures, training histories, test metrics
-app/app.py             Streamlit demo
+app/app.py             Streamlit demo (app/requirements.txt: Streamlit Cloud deps)
 ```
 
 ## Setup
@@ -181,6 +181,12 @@ Open http://localhost:8501 and upload a photo. The app shows the predicted class
 The app builds the architecture named in `models/config.json` with `src.models.get_model` and loads `models/best.pth`.
 If either file doesn't exist yet, it shows a "model not trained yet" notice instead. A replaced model is picked up on
 page reload.
+
+### Online (Streamlit Community Cloud)
+
+The app is deployed from this repo with entrypoint `app/app.py`, branch `main`, Python 3.12. Community Cloud installs
+`app/requirements.txt` (it is next to the entrypoint, so it wins over the root file): only the app's dependencies, with
+CPU-only torch/torchvision. Keep its pins in sync with the root `requirements.txt`. Every push to `main` redeploys.
 
 ## Docker
 
