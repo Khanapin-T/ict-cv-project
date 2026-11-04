@@ -192,6 +192,13 @@ The app is deployed from this repo with entrypoint `app/app.py`, branch `main`, 
 `app/requirements.txt` (it is next to the entrypoint, so it wins over the root file): only the app's dependencies, with
 CPU-only torch/torchvision. Keep its pins in sync with the root `requirements.txt`. Every push to `main` redeploys.
 
+### Online (Hugging Face Spaces, backup)
+
+`.github/workflows/hf-space.yml` mirrors the app to the Docker Space `<hf-user>/smartwaste-ai` on every push to `main`
+that touches the app (or by hand: Actions → Deploy to Hugging Face Space → Run workflow). It builds the same
+`Dockerfile`, with Streamlit's XSRF check off because Spaces embed the app in a cross-domain iframe. It needs the repo
+secret `HF_TOKEN` (a Hugging Face token with Write access) and does nothing without it.
+
 ## Docker
 
 ```bash

@@ -1,0 +1,58 @@
+# Mirrors the demo app to a Hugging Face Docker Space (backup host for Streamlit Community Cloud).
+# Needs one repo secret: HF_TOKEN (a Hugging Face token with Write access). Without it the job is a no-op.
+# The Space is <hf-user>/smartwaste-ai and is created on the first run.
+name: Deploy to Hugging Face Space
+
+on:
+  push:
+    branches: [main]
+    paths: [app/**, src/**, models/**, Dockerfile, requirements.txt, .github/workflows/hf-space.yml]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      SPACE_NAME: smartwaste-ai
+    steps:
+      - name: Skip without HF_TOKEN
+        if: env.HF_TOKEN == ''
+        run: echo "::notice::HF_TOKEN secret is not set, skipping the Space deploy."
+
+      - uses: actions/checkout@v4
+        if: env.HF_TOKEN != ''
+
+      - name: Stage the Space files
+        if: env.HF_TOKEN != ''
+        run: |
+          mkdir space
+          cp -r Dockerfile requirements.txt app src models space/
+          # Spaces embed the app in an iframe on another domain, where Streamlit's XSRF cookie is blocked
+          # and st.file_uploader fails with 403 (https://huggingface.co/docs/hub/en/spaces-cookie-limitations).
+          sed -i 's/"--server.address=0.0.0.0"\]$/"--server.address=0.0.0.0", "--server.enableXsrfProtection=false"]/' space/Dockerfile
+          grep -q enableXsrfProtection=false space/Dockerfile
+          printf '%s\n' '---' 'title: SmartWaste AI' 'emoji: ♻️' 'colorFrom: green' 'colorTo: blue' 'sdk: docker' \
+            'app_port: 8501' 'pinned: false' '---' '' \
+            'Classifies a photo of waste into 6 TrashNet classes. Source: GitHub repo ict-cv-project.' > space/README.md
+
+      - uses: actions/setup-python@v5
+        if: env.HF_TOKEN != ''
+        with:
+          python-version: "3.12"
+
+      - name: Upload to the Space
+        if: env.HF_TOKEN != ''
+        run: |
+          pip install -q huggingface_hub==2.4.0
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          repo_id = f"{api.whoami()['name']}/{os.environ['SPACE_NAME']}"
+          api.create_repo(repo_id, repo_type="space", space_sdk="docker", exist_ok=True)
+          api.upload_folder(repo_id=repo_id, repo_type="space", folder_path="space",
+                            commit_message=f"Sync from GitHub {os.environ['GITHUB_SHA'][:7]}")
+          print(f"Space: https://huggingface.co/spaces/{repo_id}")
+          PY
