@@ -1,0 +1,7 @@
+class,raw,duplicates_removed,kept,train,val,test
+cardboard,403,2,401,281,60,60
+glass,501,4,497,348,74,75
+metal,410,4,406,284,61,61
+paper,594,23,571,399,86,86
+plastic,482,2,480,336,72,72
+trash,137,0,137,96,21,20

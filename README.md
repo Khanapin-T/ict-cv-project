@@ -6,6 +6,8 @@ waste sorting.
 
 **Live demo:** https://smartwaste-aiaiai.streamlit.app
 
+**For the defence:** [for_defence/](for_defence/) has all results and training evidence with self-explaining file names.
+
 ## Goal
 
 The project keeps the open dataset fixed and changes the ML algorithm:
