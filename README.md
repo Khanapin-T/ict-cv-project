@@ -152,6 +152,9 @@ src/train.py           train() + CLI -> models/<run>.pth, reports/history_<run>.
 src/evaluate.py        evaluate() -> reports/exp_<run>.json, reports/cm_<run>.png
 src/optimization.py    Adam vs SGD on baseline_cnn -> reports/optimization.csv
 src/report.py          summary.csv, loss curves, best-model export, README tables
+src/inference.py       single-image prediction shared by the app and demo_images.py
+src/training_log.py    reports/training_log.md: per-epoch log of the 3 runs + consistency checks
+src/demo_images.py     copy test-split demo photos, check the app matches evaluate.py
 notebooks/             colab_train.ipynb (all training runs), data_analysis.ipynb
 tests/                 pytest contract and app tests
 splits/splits.csv      fixed train/val/test split (committed)
@@ -159,6 +162,8 @@ data/raw/              TrashNet images (not committed)
 models/                best.pth + config.json: the final model used by the app (committed)
 reports/               class counts, duplicates, data figures, training histories, test metrics
 app/app.py             Streamlit demo (app/requirements.txt: Streamlit Cloud deps)
+demo_images/           12 test-split photos to upload in the demo
+for_defence/           copies of reports/ with self-explaining names, for the defence
 ```
 
 ## Setup
