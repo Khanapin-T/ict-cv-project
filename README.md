@@ -18,13 +18,15 @@ The project keeps the open dataset fixed and changes the ML algorithm:
    precision/recall, per-class metrics and confusion matrices are reported too.
 4. Serve the best model in a Streamlit demo, packaged with Docker.
 
-## Team
+## Team (5 members)
 
 | Member | Defence topic |
 |---|---|
-| Participant 1 | Data: dataset & splits, data analysis, evaluation |
-| Participant 2 | Models & training: baseline/modified CNN, training loop, results |
-| Tair | Optimization (Adam vs SGD), app, Docker |
+| Participant 1 | Task & project pipeline; live demo of the app |
+| Participant 2 | Data: dataset, dedup, train/val/test split, why macro F1 |
+| Participant 3 | Models & training: baseline/modified CNN, the 3 experiments (incl. Adam vs SGD), overfitting |
+| Participant 4 | Results: metrics table, confusion matrices, model errors |
+| Participant 5 | Limitations & conclusions |
 
 Shared rules (the fixed split and the interface contract) are in
 [AGENTS.md](AGENTS.md). Read it before changing code.

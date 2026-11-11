@@ -91,11 +91,13 @@ for smoke runs only; results of such runs (QUICK mode) are never committed. Each
 
 | Member | Topic |
 |---|---|
-| Participant 1 | Data: dataset & splits, data analysis, evaluation |
-| Participant 2 | Models & training: baseline/modified CNN, training loop, results |
-| Tair | Optimization (Adam vs SGD), app, Docker |
+| Participant 1 | Task & project pipeline; live demo of the app |
+| Participant 2 | Data: dataset, dedup, train/val/test split, why macro F1 |
+| Participant 3 | Models & training: baseline/modified CNN, the 3 experiments (incl. Adam vs SGD), overfitting |
+| Participant 4 | Results: metrics table, confusion matrices, model errors |
+| Participant 5 | Limitations & conclusions |
 
-Tair's agent writes all code. Teammates prepare the slides for their topics.
+The team has 5 members; each one defends their part. Tair's agent writes all code.
 
 ## Git workflow
 
