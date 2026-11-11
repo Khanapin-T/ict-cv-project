@@ -37,9 +37,7 @@ HF_FILE = "dataset-resized.zip"  # 512x384 images; dataset-original.zip holds th
 
 CLASSES = ["cardboard", "glass", "metal", "paper", "plastic", "trash"]
 IMAGE_EXTS = {".jpg", ".jpeg", ".png"}
-# 256-bit phash: the 64-bit default collides for different small objects on TrashNet's plain white
-# background. Pairs were checked by eye: <= 48 differing bits were always the same photo (re-saved,
-# shifted or slightly cropped), 50-52 mixes re-shots of an object with different objects, >= 56 differ.
+
 HASH_SIZE = 16
 HASH_THRESHOLD = 48
 SEED = 42
